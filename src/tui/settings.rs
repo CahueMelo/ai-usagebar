@@ -384,28 +384,20 @@ impl SettingsState {
                 let visible = self.visible_keys();
                 match visible.iter().position(|&v| v == i) {
                     Some(pos) if pos + 1 < visible.len() => Focus::Key(visible[pos + 1]),
-                    Some(_) => Focus::Save,
-                    None => Focus::Save,
+                    _ => Focus::Save,
                 }
             }
-            Focus::Save => match self.visible_keys().first() {
-                Some(&i) => Focus::Key(i),
-                None => Focus::Primary,
-            },
+            Focus::Save => Focus::Primary,
         }
     }
 
     fn prev_focus(&self) -> Focus {
         let visible = self.visible_keys();
         match self.focus {
-            Focus::Primary => match visible.last() {
-                Some(&i) => Focus::Key(i),
-                None => Focus::Save,
-            },
+            Focus::Primary => Focus::Save,
             Focus::Key(i) => match visible.iter().position(|&v| v == i) {
-                Some(0) => Focus::Primary,
+                Some(0) | None => Focus::Primary,
                 Some(pos) => Focus::Key(visible[pos - 1]),
-                None => Focus::Primary,
             },
             Focus::Save => match visible.last() {
                 Some(&i) => Focus::Key(i),
@@ -922,8 +914,17 @@ pub fn render(
 
     // A row's absolute y is the body top plus its line index (each rendered
     // line is exactly one row). Recorded alongside each interactive row so a
-    // mouse click can be mapped back to a focus target.
-    let row_at = |line: usize| Rect::new(inner.x, chunks[0].y + line as u16, inner.width, 1);
+    // mouse click can be mapped back to a focus target, clamped to the visible
+    // body height.
+    let row_at = |line: usize| {
+        let y = chunks[0].y.saturating_add(line as u16);
+        let bottom = chunks[0].y.saturating_add(chunks[0].height);
+        if y < bottom {
+            Some(Rect::new(inner.x, y, inner.width, 1))
+        } else {
+            None
+        }
+    };
 
     // — Primary vendor + API keys header —
     let mut lines: Vec<Line> = vec![
@@ -932,18 +933,24 @@ pub fn render(
         Line::from(""),
         section_header("API keys", "all key providers", &bubble),
     ];
-    hits.push((SettingsRow::Focus(Focus::Primary), row_at(1)));
+    if let Some(r) = row_at(1) {
+        hits.push((SettingsRow::Focus(Focus::Primary), r));
+    }
 
     for (i, kv) in KEY_VENDORS.iter().enumerate() {
         let focused = state.focus == Focus::Key(i);
-        hits.push((SettingsRow::Focus(Focus::Key(i)), row_at(lines.len())));
+        if let Some(r) = row_at(lines.len()) {
+            hits.push((SettingsRow::Focus(Focus::Key(i)), r));
+        }
         lines.push(key_row(kv, &state.keys[i], focused, &bubble));
     }
 
     lines.push(Line::from(""));
 
     // — Save + status —
-    hits.push((SettingsRow::Focus(Focus::Save), row_at(lines.len())));
+    if let Some(r) = row_at(lines.len()) {
+        hits.push((SettingsRow::Focus(Focus::Save), r));
+    }
     lines.push(save_line(state.focus == Focus::Save, &bubble));
     if !state.status.is_empty() {
         let ok = state.status.starts_with("saved");
@@ -1190,6 +1197,30 @@ mod tests {
         assert_eq!(Focus::Primary.next().prev(), Focus::Primary);
         assert_eq!(Focus::Save.prev().next(), Focus::Save);
         assert_eq!(Focus::Primary.prev(), Focus::Save);
+    }
+
+    #[test]
+    fn settings_state_next_and_prev_focus_cycle_through_all_controls() {
+        let mut s = blank_state(VendorId::Anthropic);
+        s.focus = Focus::Primary;
+        let mut seen = vec![s.focus];
+        for _ in 0..(KEY_VENDORS.len() + 2) {
+            s.focus = s.next_focus();
+            seen.push(s.focus);
+        }
+        assert_eq!(seen.first(), Some(&Focus::Primary));
+        assert_eq!(seen.last(), Some(&Focus::Primary));
+        assert_eq!(seen[1], Focus::Key(0));
+        assert_eq!(seen[KEY_VENDORS.len()], Focus::Key(KEY_VENDORS.len() - 1));
+        assert_eq!(seen[KEY_VENDORS.len() + 1], Focus::Save);
+        assert_eq!(seen[KEY_VENDORS.len() + 2], Focus::Primary);
+
+        // prev_focus is the exact reverse
+        assert_eq!(s.prev_focus(), Focus::Save);
+        s.focus = Focus::Save;
+        assert_eq!(s.prev_focus(), Focus::Key(KEY_VENDORS.len() - 1));
+        s.focus = Focus::Key(0);
+        assert_eq!(s.prev_focus(), Focus::Primary);
     }
 
     #[test]

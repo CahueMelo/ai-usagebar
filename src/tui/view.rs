@@ -29,17 +29,19 @@ struct FooterBinding {
 
 impl FooterBinding {
     fn width(self) -> u16 {
-        text_width(self.key)
+        (crate::display::text_width(self.key) as u16)
             .saturating_add(1)
-            .saturating_add(text_width(self.description))
+            .saturating_add(crate::display::text_width(self.description) as u16)
     }
 }
 
-fn text_width(text: &str) -> u16 {
-    text.chars().count().min(u16::MAX as usize) as u16
-}
-
 pub fn draw(f: &mut Frame, app: &App) {
+    let mut hit = app.hit.borrow_mut();
+    hit.settings_rows.clear();
+    hit.nav_entries.clear();
+    hit.footer_actions.clear();
+    drop(hit);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -55,7 +57,6 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     // Settings still floats on top of everything.
     let mut hit = app.hit.borrow_mut();
-    hit.settings_rows.clear();
     if let Some(s) = &app.settings {
         crate::tui::settings::render(f, f.area(), s, &app.theme, &mut hit.settings_rows);
     }
@@ -931,6 +932,41 @@ mod tests {
                 ),
                 "missing hit target for key provider {index}"
             );
+        }
+    }
+
+    #[test]
+    fn settings_draw_clamps_hit_rects_on_short_terminals() {
+        use crate::tui::settings::{Focus as SFocus, KeyInput, SettingsRow, SettingsState};
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
+        let keys: Vec<KeyInput> = crate::tui::settings::KEY_VENDORS
+            .iter()
+            .map(|_| KeyInput::default())
+            .collect();
+        app.settings = Some(SettingsState {
+            focus: SFocus::Primary,
+            primary_choices: vec![VendorId::Anthropic],
+            primary: VendorId::Anthropic,
+            keys,
+            status: String::new(),
+        });
+        // 12 rows tall: modal body cannot fit all key vendors and the save row
+        let mut terminal = Terminal::new(TestBackend::new(160, 12)).unwrap();
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+
+        let hit = app.hit.borrow();
+        // Clamped: Save row is clipped and must not be recorded as a clickable hit target
+        assert!(
+            !hit.settings_rows
+                .iter()
+                .any(|(row, _)| matches!(row, SettingsRow::Focus(SFocus::Save)))
+        );
+        // All recorded hit rects must stay within the terminal height
+        for (_, rect) in &hit.settings_rows {
+            assert!(rect.y + rect.height <= 12);
         }
     }
 }

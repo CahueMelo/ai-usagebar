@@ -273,7 +273,12 @@ where
                     }
                 }
                 Ok(Event::Mouse(m)) => {
-                    if input_tx.send(InputEvent::Mouse(m)).is_err() {
+                    // Only left-clicks require hit testing; drop motion, release,
+                    // scroll, and other mouse events to avoid unnecessary redraws
+                    // and unbounded channel backlog.
+                    if m.kind == MouseEventKind::Down(MouseButton::Left)
+                        && input_tx.send(InputEvent::Mouse(m)).is_err()
+                    {
                         return;
                     }
                 }
@@ -599,6 +604,10 @@ fn handle_mouse(app: &mut App, m: &event::MouseEvent) -> Option<MouseAction> {
     if m.kind != MouseEventKind::Down(MouseButton::Left) {
         return None;
     }
+    // Context overlay consumes all input while open (matching key dispatch).
+    if app.context.is_some() {
+        return None;
+    }
     let pos = Position::new(m.column, m.row);
 
     if let Some(s) = app.settings.as_mut() {
@@ -756,6 +765,25 @@ mod tests {
                 Some(MouseAction::Footer(action)) if action == expected
             ));
         }
+    }
+
+    #[test]
+    fn mouse_clicks_are_ignored_when_context_overlay_is_open() {
+        let mut app = app_with_two();
+        app.context = Some(ai_usagebar::tui::context::ContextState::new(
+            ai_usagebar::config::ContextLayout::Split,
+        ));
+        app.hit.borrow_mut().footer_actions = vec![(
+            FooterAction::Quit,
+            ratatui::layout::Rect::new(0, 0, 10, 1),
+        )];
+        let click = event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(handle_mouse(&mut app, &click).is_none());
     }
 
     fn args(items: &[&str]) -> Vec<std::ffi::OsString> {
