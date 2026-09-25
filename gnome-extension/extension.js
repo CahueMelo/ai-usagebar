@@ -23,6 +23,15 @@ import {barMarkup, colorForPct, disambiguateTags, field, FIELD, FORMAT, hasUsage
 
 const ROLE = 'ai-usagebar';
 
+// Shell 45–46 expose `vertical`; newer shells expose `orientation`.
+const HAS_ORIENTATION = !!GObject.Object.find_property.call(St.BoxLayout, 'orientation');
+
+function verticalBox(props) {
+    return new St.BoxLayout(HAS_ORIENTATION
+        ? {orientation: Clutter.Orientation.VERTICAL, ...props}
+        : {vertical: true, ...props});
+}
+
 // Fixed accent colors (tags / dim text). Bar colors are user-configurable.
 const DIM = '#5c6370';
 const FG = '#abb2bf';
@@ -159,8 +168,7 @@ class AiUsageBarIndicator extends PanelMenu.Button {
     // A native, font-independent row: [name ........ value] / bar / reset.
     _addRow(key, name) {
         const item = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
-        const vbox = new St.BoxLayout({
-            orientation: Clutter.Orientation.VERTICAL,
+        const vbox = verticalBox({
             x_expand: true,
             style_class: 'aiub-row',
         });

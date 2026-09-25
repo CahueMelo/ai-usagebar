@@ -9,6 +9,12 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **GNOME Shell 45–46 compatibility.** Vertical menu rows now use the
+  layout property available in the running Shell, avoiding the unsupported
+  `orientation` property on older versions.
+
 ## [1.26.0] — 2026-09-27
 
 ### Added
