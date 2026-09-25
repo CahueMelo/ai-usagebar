@@ -75,6 +75,9 @@ mkdir -p "$DEST" && cp -r * "$DEST"/      # or: ln -s "$PWD" "$DEST"
 | Binary path | auto | empty = `PATH` then `~/.cargo/bin` |
 | Panel area | `right` | `right` = next to network/clock; also `center`/`left` |
 | Panel index | 0 | order within the area (0 = leftmost) |
+| Provider summary | bars and values | Menu only. Choose values only to hide the mini bars; the overview stays visible. |
+| Show provider icons | on | Menu only. Symbolic marks follow the Shell text colour; providers without an asset use a generic system icon. |
+| Compact spacing | off | Menu only. Reduces spacing without hiding metrics. |
 
 ## How it renders
 
@@ -92,7 +95,12 @@ orange · ≥50 yellow · else green), so it matches the Waybar widget.
 
 The **click menu** runs `ai-usagebar usage --json` when opened and at the
 configured interval while it is open. It lists each report entry in report
-order, including named accounts and custom providers. Expand a provider with
+order, including named accounts and custom providers. Each collapsed row
+previews up to two metrics in report order, retaining their labels and group
+headings. `+N more` indicates additional metrics available when expanded.
+The summary never merges quotas or guesses window names. A balance uses the
+report's formatted value; entries with no metrics preview up to two text
+values instead. Expand a provider with
 a click, Enter or Right; Left collapses it. The provider list scrolls within
 60% of the monitor height, and report text wraps within a bounded width.
 
@@ -108,6 +116,14 @@ The menu uses GNOME's submenu navigation and theme, with the existing
 Refresh updates the panel and report and closes the menu like a normal menu
 action. Periodic updates preserve expanded providers and keyboard focus.
 The top bar's command failures appear above the provider list.
+
+**Menu appearance** in preferences controls mini bars, icons and spacing
+independently of the top bar. Changes apply immediately and preserve focus
+and the expanded provider. Bar fills reuse the existing severity colours;
+backgrounds, text and selection follow the Shell theme. Provider artwork is
+reused from the Omarchy integration; see [sources and licences](icons/README.md).
+Assets are optional: a new provider works without adding an icon or editing a
+frontend registry.
 
 Pace markers need a real reset and the elapsed share of the window. The top
 bar uses the `{*_reset}` / `{*_elapsed}` fields and its existing point-delta

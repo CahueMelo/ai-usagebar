@@ -163,7 +163,7 @@ function rgbaToHex(rgba) {
 
 // A row with a GTK color picker bound to a hex-string GSetting.
 function colorRow(settings, key, title) {
-    const row = new Adw.ActionRow({title});
+    const row = new Adw.ActionRow({title, use_markup: false});
     const btn = new Gtk.ColorDialogButton({
         dialog: new Gtk.ColorDialog({with_alpha: false}),
         valign: Gtk.Align.CENTER,
@@ -195,7 +195,7 @@ export default class AiUsageBarPrefs extends ExtensionPreferences {
         window.add(page);
 
         // ── Display ──────────────────────────────────────────────────────
-        const display = new Adw.PreferencesGroup({title: _('Display')});
+        const display = new Adw.PreferencesGroup({title: _('Top bar appearance')});
         page.add(display);
 
         const showSession = new Adw.SwitchRow({title: _('Show 5h (session) bar')});
@@ -219,7 +219,7 @@ export default class AiUsageBarPrefs extends ExtensionPreferences {
         const poolValues = ['both', 'primary', 'secondary', 'auto'];
         const pools = new Adw.ComboRow({
             title: _('Pools no painel'),
-            subtitle: _('for providers with two independent pools (e.g. Antigravity: Gemini and Claude & GPT OSS)'),
+            subtitle: GLib.markup_escape_text(_('for providers with two independent pools (e.g. Antigravity: Gemini and Claude & GPT OSS)'), -1),
             model: Gtk.StringList.new(poolLabels),
         });
         bindCombo(settings, 'panel-pools', pools, poolValues);
@@ -256,10 +256,28 @@ export default class AiUsageBarPrefs extends ExtensionPreferences {
         settings.bind('bar-width', barWidth, 'value', Gio.SettingsBindFlags.DEFAULT);
         display.add(barWidth);
 
+        const menu = new Adw.PreferencesGroup({
+            title: _('Menu appearance'),
+            description: _('Provider summaries remain visible. Changes apply immediately; the menu follows the Shell theme.'),
+        });
+        page.add(menu);
+        const summaryStyle = new Adw.ComboRow({
+            title: _('Provider summary'),
+            model: Gtk.StringList.new([_('Bars and values'), _('Values only')]),
+        });
+        bindCombo(settings, 'menu-summary-style', summaryStyle, ['bars', 'values']);
+        menu.add(summaryStyle);
+        const menuIcons = new Adw.SwitchRow({title: _('Show provider icons')});
+        settings.bind('menu-show-icons', menuIcons, 'active', Gio.SettingsBindFlags.DEFAULT);
+        menu.add(menuIcons);
+        const compactMenu = new Adw.SwitchRow({title: _('Compact spacing')});
+        settings.bind('menu-compact', compactMenu, 'active', Gio.SettingsBindFlags.DEFAULT);
+        menu.add(compactMenu);
+
         // ── Colours ────────────────────────────────────────────────────────
         const colors = new Adw.PreferencesGroup({
             title: _('Colours'),
-            description: _('Bar colour by usage band (One Dark by default).'),
+            description: _('Shared bar colours for the top bar and menu (One Dark by default). Menu severity comes from the usage report.'),
         });
         page.add(colors);
         colors.add(colorRow(settings, 'color-low', _('Low (<50%)')));

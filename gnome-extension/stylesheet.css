@@ -7,7 +7,40 @@
 
 /* Bound both long provider lists and wrapped report text. */
 .aiub-providers {
-    width: 340px;
+    width: 380px;
+}
+
+.aiub-provider-content {
+    spacing: 6px;
+}
+
+.aiub-provider.aiub-compact {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.aiub-compact .aiub-provider-content {
+    spacing: 2px;
+}
+
+.aiub-overview {
+    spacing: 4px;
+    font-size: 0.85em;
+}
+
+.aiub-compact .aiub-overview {
+    spacing: 2px;
+}
+
+.aiub-overview-row {
+    spacing: 8px;
+}
+
+.aiub-overview-value {
+    min-width: 3.6em;
+    max-width: 8em;
+    text-align: right;
+    font-feature-settings: "tnum";
 }
 
 .aiub-details {

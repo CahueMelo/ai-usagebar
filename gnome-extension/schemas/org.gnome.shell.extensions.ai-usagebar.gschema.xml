@@ -19,6 +19,25 @@
       <summary>Absolute path to the ai-usagebar binary (empty = auto-detect on PATH / ~/.cargo/bin)</summary>
     </key>
 
+    <key name="menu-summary-style" type="s">
+      <choices>
+        <choice value="bars"/>
+        <choice value="values"/>
+      </choices>
+      <default>'bars'</default>
+      <summary>Provider summaries in the menu: bars and values, or values only</summary>
+    </key>
+
+    <key name="menu-show-icons" type="b">
+      <default>true</default>
+      <summary>Show symbolic provider icons in the menu</summary>
+    </key>
+
+    <key name="menu-compact" type="b">
+      <default>false</default>
+      <summary>Use compact spacing in the provider menu</summary>
+    </key>
+
     <key name="bar-width" type="i">
       <default>8</default>
       <range min="4" max="20"/>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {commandFailure, elapsedPercent, errorLine, finitePercent, formatDuration, formatReset, metricDetail,
-    parseReport, projectEntry} from './report-model.js';
+    parseReport, projectEntry, summarize, brandSlug} from './report-model.js';
 
 const now = Date.parse('2026-09-24T18:00:00Z');
 const labels = rows => rows.map(row => `${row.type}:${row.label}`);
@@ -213,5 +213,35 @@ assert.equal(parseReport(JSON.stringify({entries: many}), now).entries.length, 7
 assert.deepEqual(projectEntry({id: 'anthropic', sections: [
     {type: 'block', label: 'Banked resets', body: ['1 available', 'Expires in 2d']},
 ]}, now).rows, [{type: 'block', label: 'Banked resets', body: ['1 available', 'Expires in 2d']}]);
+
+// Overview previews preserve order, exact labels and values, including zero.
+const preview = entry => summarize(entry.rows);
+assert.deepEqual(preview(claude).rows.map(row => [row.label, row.valueText]),
+    [['Session (5h)', '84%'], ['Weekly (7d)', '0%']]);
+assert.equal(preview(claude).remaining, 0);
+assert.deepEqual(preview(custom).rows.map(row => row.label), ['Daily (1d)', 'Burst (3h)']);
+assert.deepEqual(preview(antigravity).rows.map(row => row.label),
+    ['Session · Gemini', 'Session · Claude & GPT OSS']);
+assert.equal(preview(antigravity).remaining, 1);
+assert.deepEqual(preview(grouped).rows.map(row => row.label), ['Overall', 'Breakdown · Chat']);
+assert.equal(preview(grouped).remaining, 2);
+assert.deepEqual(preview(projectEntry({id: 'x', sections: [
+    {type: 'metric', label: 'Chat', group: 'Breakdown', percent: 10},
+    {type: 'metric', label: 'Overall', percent: 20},
+]})).rows.map(row => row.label), ['Breakdown · Chat', 'Overall']);
+assert.deepEqual(preview(failed), {rows: [], remaining: 0});
+assert.equal(preview(balance).rows[0].headline, 'value');
+assert.equal(preview(balance).rows[0].valueText, '$12.50');
+assert.deepEqual(preview(projectEntry({id: 'x', sections: [
+    {type: 'text', label: 'Balance', value: '-$1.25'},
+]})), {rows: [{label: 'Balance', valueText: '-$1.25', headline: 'value'}], remaining: 0});
+assert.deepEqual(preview(absent).rows.map(row => row.label), ['Weekly']);
+
+// Future providers need no registration. Unsafe brand paths never name assets.
+assert.equal(brandSlug('new-brand', 'custom:future'), 'new-brand');
+assert.equal(brandSlug(undefined, 'anthropic@work'), 'anthropic');
+assert.equal(brandSlug('', 'custom:future'), '');
+assert.equal(brandSlug('../../etc/passwd', 'anthropic'), '');
+assert.equal(brandSlug('UPPERCASE', 'x'), '');
 
 console.log('report model tests passed');

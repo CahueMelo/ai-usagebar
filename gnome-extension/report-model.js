@@ -126,6 +126,39 @@ function sectionRow(section, nowMs) {
     return label || value ? {type: 'text', label, value} : null;
 }
 
+// Keep report order and heading context. A collapsed overview is a preview,
+// not a synthetic quota: never aggregate pools or infer window names.
+export function summarize(rows) {
+    const metrics = [];
+    let heading = '';
+    for (const row of rows) {
+        if (row.type === 'group') {
+            // Explicit groups already travel on their metrics and must not
+            // leak onto a subsequent ungrouped row.
+            heading = '';
+        } else if (row.type === 'text' && !row.value) {
+            heading = row.label;
+        } else if (row.type === 'metric') {
+            const context = row.group || heading;
+            metrics.push({...row, label: context && context !== row.label
+                ? `${context} · ${row.label}` : row.label});
+        } else {
+            heading = '';
+        }
+    }
+    const candidates = metrics.length ? metrics : rows
+        .filter(row => row.type === 'text' && row.value)
+        .map(row => ({label: row.label, valueText: row.value, headline: 'value'}));
+    return {rows: candidates.slice(0, 2), remaining: Math.max(0, candidates.length - 2)};
+}
+
+// Marks are optional assets, addressed by the report's brand, not a vendor
+// registry. Older binaries can use the vendor part of a named account ID.
+export function brandSlug(brand, id) {
+    const slug = clean(brand, 32) || clean(id, 180).split('@')[0];
+    return /^[a-z0-9][a-z0-9_-]{0,31}$/.test(slug) ? slug : '';
+}
+
 export function projectEntry(raw, nowMs = Date.now()) {
     if (!raw || typeof raw !== 'object')
         return null;
@@ -154,6 +187,7 @@ export function projectEntry(raw, nowMs = Date.now()) {
     return {
         id,
         title: clean(raw.display_name, 240) || clean(raw.name, 240) || id,
+        brand: brandSlug(raw.brand, id),
         plan: clean(raw.plan, 240),
         stale: raw.stale === true,
         error,

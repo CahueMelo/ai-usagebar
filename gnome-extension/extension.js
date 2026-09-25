@@ -20,7 +20,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {barMarkup, colorForPct, disambiguateTags, field, FIELD, FORMAT, hasUsageWindows, integer,
     isGrouped, MARKER, markerElapsed, plainTextFromPango, selectPools,
     splitFormatOutput} from './marker-logic.js';
-import {commandFailure, errorLine, parseReport} from './report-model.js';
+import {commandFailure, errorLine, parseReport, summarize} from './report-model.js';
 
 const ROLE = 'ai-usagebar';
 
@@ -117,11 +117,13 @@ function resolveBinary(settings) {
 
 const Indicator = GObject.registerClass(
 class AiUsageBarIndicator extends PanelMenu.Button {
-    _init(settings, openPrefs) {
+    _init(settings, openPrefs, iconDir) {
         super._init(0.0, 'AI Usage Bar', false);
 
         this._settings = settings;
         this._openPrefs = openPrefs;
+        this._iconDir = iconDir;
+        this._marks = new Map();
         this._data = null;          // parsed snapshot for redraws
         this._report = null;        // parsed `usage --json` for the menu
         this._panelError = '';      // why the top bar shows ⚠, shown in the menu
@@ -149,6 +151,7 @@ class AiUsageBarIndicator extends PanelMenu.Button {
             'show-weekly', 'show-extra', 'color-low', 'color-mid',
             'color-high', 'color-critical', 'color-empty',
             'panel-pools', 'panel-auto-threshold',
+            'menu-summary-style', 'menu-show-icons', 'menu-compact',
         ];
         this._viewIds = viewKeys.map(k =>
             this._settings.connect(`changed::${k}`, () => this._render()));
@@ -215,11 +218,73 @@ class AiUsageBarIndicator extends PanelMenu.Button {
         return item;
     }
 
+    _markIcon(brand) {
+        if (!brand)
+            return null;
+        if (!this._marks.has(brand)) {
+            const file = this._iconDir.get_child(`${brand}-symbolic.svg`);
+            this._marks.set(brand, file.query_exists(null) ? new Gio.FileIcon({file}) : null);
+        }
+        return this._marks.get(brand);
+    }
+
+    _overview(summary, colors) {
+        const box = verticalBox({x_expand: true, style_class: 'aiub-overview'});
+        const bars = this._settings.get_string('menu-summary-style') === 'bars';
+        for (const row of summary.rows) {
+            const line = new St.BoxLayout({x_expand: true, style_class: 'aiub-overview-row'});
+            line.add_child(new St.Label({text: row.label, x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER}));
+            if (bars && row.headline !== 'value')
+                line.add_child(barWidget(row.percent, 56, 4, colors[row.severity] || colors.low, null));
+            line.add_child(new St.Label({text: row.valueText, style_class: 'aiub-overview-value',
+                y_align: Clutter.ActorAlign.CENTER}));
+            box.add_child(line);
+        }
+        if (summary.remaining)
+            box.add_child(new St.Label({text: `+${summary.remaining} more`, style_class: 'aiub-detail'}));
+        return box;
+    }
+
     _providerMenu(entry, colors) {
         const status = entry.error ? ' · Error' : entry.stale ? ' · cached' : '';
-        const item = new PopupMenu.PopupSubMenuMenuItem(entry.title + status);
+        const title = entry.title + (entry.plan ? ` · ${entry.plan}` : '') + status;
+        const icons = this._settings.get_boolean('menu-show-icons');
+        const item = new PopupMenu.PopupSubMenuMenuItem(title, icons);
+        item.add_style_class_name('aiub-provider');
+        if (this._settings.get_boolean('menu-compact'))
+            item.add_style_class_name('aiub-compact');
+        // The content takes the available width so value columns align
+        // across providers; the native expander no longer needs to stretch.
+        const expander = item.get_children().find(actor =>
+            actor.has_style_class_name('popup-menu-item-expander'));
+        if (expander)
+            expander.x_expand = false;
+        if (icons) {
+            const mark = this._markIcon(entry.brand);
+            if (mark)
+                item.icon.gicon = mark;
+            else
+                item.icon.icon_name = 'application-x-executable-symbolic';
+            item.icon.y_align = Clutter.ActorAlign.START;
+        }
         item.label.x_expand = true;
         item.label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        item.label.add_style_class_name('aiub-heading');
+        // Keep the native submenu's label, arrow and keyboard handling; only
+        // extend its content with an always-visible report preview.
+        const content = verticalBox({x_expand: true, style_class: 'aiub-provider-content'});
+        item.remove_child(item.label);
+        content.add_child(item.label);
+        const summary = summarize(entry.error ? [] : entry.rows);
+        if (summary.rows.length)
+            content.add_child(this._overview(summary, colors));
+        else if (!entry.error)
+            content.add_child(new St.Label({text: entry.rows.length ? 'Details available' : 'No usage data reported',
+                style_class: 'aiub-detail'}));
+        item.insert_child_at_index(content, icons ? 2 : 1);
+        item.accessible_name = [title, ...summary.rows.map(row => `${row.label}: ${row.valueText}`),
+            summary.remaining ? `+${summary.remaining} more` : ''].filter(Boolean).join('. ');
         const section = new PopupMenu.PopupMenuSection();
         const details = verticalBox({x_expand: true, style_class: 'aiub-details'});
         section.actor.add_child(details);
@@ -665,7 +730,8 @@ export default class AiUsageBarExtension extends Extension {
             existing.destroy();
             delete Main.panel.statusArea[ROLE];
         }
-        this._indicator = new Indicator(this._settings, () => this.openPreferences());
+        this._indicator = new Indicator(this._settings, () => this.openPreferences(),
+            this.dir.get_child('icons'));
         const box = this._settings.get_string('panel-box') || 'right';
         const index = Math.max(0, this._settings.get_int('panel-index'));
         Main.panel.addToStatusArea(ROLE, this._indicator, index, box);

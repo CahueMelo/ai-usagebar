@@ -14,13 +14,18 @@ Each release is also published at
 - **GNOME menu supports all enabled providers.** Native submenus display
   the shared usage report, including Cursor, named accounts and custom
   providers, with metric labels, balances, errors and reset details supplied
-  by the binary. The top bar continues to follow its vendor preference.
+  by the binary. Collapsed rows preview the first two metrics in report order,
+  retaining their labels and groups, with optional mini bars and symbolic
+  provider icons. Menu preferences offer values only, hidden icons and compact
+  spacing. The top bar continues to follow its vendor preference.
 
 ### Fixed
 
 - **GNOME Shell 45–46 compatibility.** Vertical menu rows now use the
   layout property available in the running Shell, avoiding the unsupported
   `orientation` property on older versions.
+- **GNOME preferences display literal labels correctly.** The pool description
+  and colour labels no longer treat `&` and `<` as markup.
 
 ## [1.26.0] — 2026-09-27
 
