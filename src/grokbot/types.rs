@@ -20,6 +20,9 @@ pub struct SandUsageStatus {
     on_demand_settings: OnDemandSettings,
     grok_plan_label: Option<String>,
     cursor_plan_name: Option<String>,
+    /// Which product bills the pool: `SAND_BILLING_BRAND_CURSOR` on the accounts
+    /// seen so far, one with both Cursor Ultra and SuperGrok Heavy included.
+    billing_brand: Option<String>,
 }
 
 /// The on-demand (pay-as-you-go) block. `visible`/`eligible`/`enabled` are
@@ -32,13 +35,16 @@ pub struct SandUsageStatus {
 struct OnDemandSettings {
     visible: bool,
     eligible: bool,
-    enabled: bool,
+    /// Live captures have sent `null` here; treat that as off.
+    enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum PercentOrString {
     Int(i64),
+    /// Live captures have sent a fractional JSON number (`19.150778`).
+    Float(f64),
     Text(String),
 }
 
@@ -46,6 +52,10 @@ impl SandUsageStatus {
     pub fn into_snapshot(self) -> Result<GrokbotSnapshot> {
         // The app's own label first ("Grok Bot Plan"); the underlying Cursor
         // plan name is the fallback, not a peer.
+        let billed_by = billed_by(
+            self.billing_brand.as_deref(),
+            self.cursor_plan_name.as_deref(),
+        );
         let plan = [self.grok_plan_label, self.cursor_plan_name]
             .into_iter()
             .flatten()
@@ -77,15 +87,39 @@ impl SandUsageStatus {
 
         Ok(GrokbotSnapshot {
             plan,
+            billed_by,
             has_included_allowance: self.has_non_zero_included_limit,
             weekly_pct,
             has_available_usage: self.has_available_usage,
-            on_demand_enabled: self.on_demand_settings.enabled,
+            on_demand_enabled: self.on_demand_settings.enabled.unwrap_or(false),
             period_start,
             reset_at,
             window,
         })
     }
+}
+
+/// The subscription that bills the pool: the product `billingBrand` names,
+/// with the plan it reports for that product ("Cursor Ultra"). Only brands
+/// seen live are named; any other stays unnamed, since a guessed brand would
+/// be worse than none.
+fn billed_by(brand: Option<&str>, cursor_plan: Option<&str>) -> Option<String> {
+    let product = match brand?.trim() {
+        "SAND_BILLING_BRAND_CURSOR" => "Cursor",
+        _ => return None,
+    };
+    let plan = cursor_plan.map(str::trim).unwrap_or_default();
+    Some(
+        if plan.is_empty() || plan.to_lowercase().starts_with("cursor") {
+            if plan.is_empty() {
+                product.to_string()
+            } else {
+                plan.to_string()
+            }
+        } else {
+            format!("{product} {plan}")
+        },
+    )
 }
 
 /// `usagePercent` is an integer percent in 0..=100. A numeric string goes
@@ -94,6 +128,7 @@ impl SandUsageStatus {
 fn parse_percent(value: PercentOrString) -> Result<i32> {
     let raw = match value {
         PercentOrString::Int(n) => n as f64,
+        PercentOrString::Float(n) => n,
         PercentOrString::Text(s) => s.trim().parse::<f64>().map_err(|_| {
             AppError::Schema(format!("grokbot: usagePercent is not numeric (got {s:?})"))
         })?,
@@ -159,10 +194,26 @@ mod tests {
     }
 
     #[test]
+    fn a_live_macos_shape_parses_fractional_percent_and_null_on_demand() {
+        // Redacted 2026-09-19 capture from GetSandUsageStatus against a macOS
+        // Grok Bot 0.57.1 session: fractional usagePercent, enabled: null.
+        let json = r#"{"currentPeriodStart":"2026-09-16T15:56:23.315Z","nextResetTimestampUtc":"2026-09-23T15:56:23.315Z","usagePercent":19.150778,"hasAvailableUsage":true,"hasNonZeroIncludedLimit":true,"onDemandSettings":{"visible":true,"eligible":true,"enabled":null},"grokPlanLabel":"Grok Bot Plan","cursorPlanName":"Ultra"}"#;
+        let snap = serde_json::from_str::<SandUsageStatus>(json)
+            .unwrap()
+            .into_snapshot()
+            .unwrap();
+        assert_eq!(snap.plan, "Grok Bot Plan");
+        assert_eq!(snap.weekly_pct, 19);
+        assert!(!snap.on_demand_enabled);
+        assert_eq!(snap.window, Some(chrono::Duration::days(7)));
+    }
+
+    #[test]
     fn usage_percent_accepts_an_int_or_a_numeric_string() {
         for (raw, expected) in [
             (r#""usagePercent": 42"#, 42),
             (r#""usagePercent": "42""#, 42),
+            (r#""usagePercent": 19.150778"#, 19),
         ] {
             let json = format!(r#"{{"hasNonZeroIncludedLimit": true, {raw}}}"#);
             let snap = serde_json::from_str::<SandUsageStatus>(&json)
@@ -258,6 +309,36 @@ mod tests {
         assert!(base(100, true, false).on_demand_note().is_none());
         assert!(base(100, false, true).on_demand_note().is_none());
         assert!(base(99, true, true).on_demand_note().is_none());
+    }
+
+    #[test]
+    fn the_billing_brand_names_cursor_and_leaves_others_unnamed() {
+        let snap = |brand: &str| {
+            let json = format!(
+                r#"{{"hasNonZeroIncludedLimit": true, "usagePercent": 5, "grokPlanLabel": "Grok Bot Plan"{brand}}}"#
+            );
+            serde_json::from_str::<SandUsageStatus>(&json)
+                .unwrap()
+                .into_snapshot()
+                .unwrap()
+        };
+        let cursor =
+            snap(r#", "billingBrand": "SAND_BILLING_BRAND_CURSOR", "cursorPlanName": "Ultra""#);
+        assert_eq!(cursor.billed_by.as_deref(), Some("Cursor Ultra"));
+        // No plan name: the product alone; a plan already naming it is not doubled.
+        let bare = snap(r#", "billingBrand": "SAND_BILLING_BRAND_CURSOR""#);
+        assert_eq!(bare.billed_by.as_deref(), Some("Cursor"));
+        let named = snap(
+            r#", "billingBrand": "SAND_BILLING_BRAND_CURSOR", "cursorPlanName": "Cursor Pro""#,
+        );
+        assert_eq!(named.billed_by.as_deref(), Some("Cursor Pro"));
+        // The plan label is untouched: `{gbt_plan}` and the tooltip keep it.
+        assert_eq!(cursor.plan, "Grok Bot Plan");
+        assert_eq!(
+            snap(r#", "billingBrand": "SAND_BILLING_BRAND_SOMETHING_NEW""#).billed_by,
+            None
+        );
+        assert_eq!(snap("").billed_by, None);
     }
 
     #[test]

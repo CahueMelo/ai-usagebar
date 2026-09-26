@@ -42,6 +42,12 @@ pub struct ReadyTab {
     /// timestamp stays stable across redraws instead of drifting with the
     /// passing wall clock.
     pub fetched_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Bar-number settings this vendor was configured with — the tank size a
+    /// prepaid balance is metered against, and which of the two numbers goes on
+    /// the bar. Resolved from config at fetch time rather than stored in the
+    /// snapshot, so editing config.toml takes effect on the next redraw instead
+    /// of waiting for the cache to expire.
+    pub display: crate::balance::DisplayPrefs,
 }
 
 /// Where a tab's usage comes from: a built-in vendor, or a user-declared
@@ -212,7 +218,9 @@ fn build_tabs(config: &Config, desktop_labels: &[String]) -> Vec<TabId> {
                 tabs.push(TabId::account_for(vendor, account.label.clone()));
             }
         } else if vendor == VendorId::Openai {
-            tabs.push(TabId::vendor(vendor));
+            if config.openai.show_default_account || config.openai.accounts.is_empty() {
+                tabs.push(TabId::vendor(vendor));
+            }
             for account in &config.openai.accounts {
                 tabs.push(TabId::account_for(vendor, account.label.clone()));
             }
@@ -534,17 +542,36 @@ pub async fn refresh_one(client: &Client, config: &Config, tab: &TabId) -> TabSt
             // `Utc::now() - cache_age` on every draw and the displayed time would
             // tick upward in real time instead of holding at the last refresh.
             let now = Utc::now();
+            let off_the_wire = outcome.off_the_wire();
             let fetched_at = outcome
                 .cache_age
                 .map(|age| now - chrono::Duration::from_std(age).unwrap_or_default());
-            TabState::Ready(Box::new(ReadyTab {
+            let state = TabState::Ready(Box::new(ReadyTab {
                 snapshot: outcome.snapshot,
                 stale: outcome.stale,
                 last_error: outcome.last_error.map(|(code, message)| {
                     (code, crate::display::sanitize_untrusted_field(&message))
                 }),
                 fetched_at,
-            }))
+                display: match &tab.source {
+                    TabSource::Builtin(vendor) => config.display_prefs(*vendor),
+                    // A `[[custom]]` provider states its own percentages; it has
+                    // no balance to meter and no headline to choose.
+                    TabSource::Custom { .. } => crate::balance::DisplayPrefs::default(),
+                },
+            }));
+            // The single notification hook every frontend shares: TUI, `usage`
+            // report, tray, and the GNOME/KDE/Omarchy frontends all land here.
+            // Wire-fresh outcomes only — never cached, stale, or failed ones —
+            // and best-effort by construction: `run` returns nothing and cannot
+            // change this function's result or the caller's exit code.
+            if off_the_wire
+                && config.notifications.enabled
+                && let Some(input) = crate::notify::RefreshInput::from_tab(tab, &state, now)
+            {
+                let _ = crate::notify::run(input, config.notifications.threshold).await;
+            }
+            state
         }
         Err(e) => TabState::error_with_plan(
             crate::display::sanitize_untrusted_field(&e.user_message()),
@@ -664,11 +691,16 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
                 Some(label) => crate::cache::Cache::for_vendor_account("openai", label)?,
                 None => crate::cache::Cache::for_vendor("openai")?,
             };
-            let creds_path = config.openai.resolve_auth_path(label)?;
+            let route = || config.openai.fetch_auth_path(label);
             let endpoints = crate::openai::fetch::Endpoints::default();
-            let outcome =
-                crate::openai::fetch_snapshot(client, &creds_path, &cache, &endpoints, DEFAULT_TTL)
-                    .await?;
+            let outcome = crate::openai::fetch_snapshot_routed(
+                client,
+                route,
+                &cache,
+                &endpoints,
+                DEFAULT_TTL,
+            )
+            .await?;
             Ok(outcome.into())
         }
         VendorId::Copilot => {
@@ -821,6 +853,23 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             .await?;
             Ok(outcome.into())
         }
+        VendorId::ModelStudio => {
+            // The bl CLI's own console session is the login; its region/site
+            // pair picks the gateway, and only a token fingerprint persists.
+            let creds = crate::modelstudio::resolve_credentials(&config.modelstudio)?;
+            let cache = crate::cache::Cache::for_vendor("modelstudio")?;
+            let endpoints =
+                crate::modelstudio::fetch::Endpoints::for_gateway(creds.region, creds.site);
+            let outcome = crate::modelstudio::fetch_snapshot_with(
+                client,
+                &creds,
+                &cache,
+                &endpoints,
+                DEFAULT_TTL,
+            )
+            .await?;
+            Ok(outcome.into())
+        }
         VendorId::Minimax => {
             let api_key = crate::config::resolve_api_key(
                 "MiniMax",
@@ -932,6 +981,24 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
                 client,
                 &api_key,
                 &config.ollama.plan,
+                &cache,
+                &endpoints,
+                DEFAULT_TTL,
+            )
+            .await?;
+            Ok(outcome.into())
+        }
+        VendorId::OrcaRouter => {
+            let api_key = crate::config::resolve_api_key(
+                "OrcaRouter",
+                &config.orcarouter.api_key_env,
+                config.orcarouter.api_key.as_deref(),
+            )?;
+            let cache = crate::cache::Cache::for_vendor("orcarouter")?;
+            let endpoints = crate::orcarouter::fetch::Endpoints::default();
+            let outcome = crate::orcarouter::fetch_snapshot(
+                client,
+                &api_key,
                 &cache,
                 &endpoints,
                 DEFAULT_TTL,
@@ -1123,6 +1190,7 @@ mod tests {
         config.openai.enabled = false;
         config.zai.enabled = false;
         config.openrouter.enabled = false;
+        config.commandcode.enabled = false;
         config.anthropic.accounts = labels
             .iter()
             .map(|l| crate::config::AnthropicAccount {
@@ -1150,6 +1218,7 @@ mod tests {
         empty.openai.enabled = false;
         empty.zai.enabled = false;
         empty.openrouter.enabled = false;
+        empty.commandcode.enabled = false;
         empty.anthropic.show_default_account = false;
         assert_eq!(
             tabs_from_config(&empty),
@@ -1187,6 +1256,7 @@ mod tests {
         config.anthropic.enabled = false;
         config.openai.enabled = false;
         config.zai.enabled = false;
+        config.commandcode.enabled = false;
         config.openrouter.accounts = vec![
             crate::config::OpenRouterAccount {
                 label: "work".into(),
@@ -1215,6 +1285,7 @@ mod tests {
         config.anthropic.enabled = false;
         config.zai.enabled = false;
         config.openrouter.enabled = false;
+        config.commandcode.enabled = false;
         config.openai.accounts.push(crate::config::OpenAiAccount {
             label: "work".into(),
             codex_auth_path: "/tmp/codex-work/auth.json".into(),
@@ -1234,6 +1305,7 @@ mod tests {
         config.anthropic.enabled = false;
         config.openai.enabled = false;
         config.zai.enabled = false;
+        config.commandcode.enabled = false;
         config.openrouter.show_default_account = false;
         assert_eq!(
             tabs_from_config(&config),
@@ -1255,6 +1327,29 @@ mod tests {
     }
 
     #[test]
+    fn codex_can_hide_default_only_when_named_accounts_exist() {
+        let mut config = Config::default();
+        config.anthropic.enabled = false;
+        config.zai.enabled = false;
+        config.openrouter.enabled = false;
+        config.commandcode.enabled = false;
+        config.openai.show_default_account = false;
+        assert_eq!(
+            tabs_from_config(&config),
+            vec![TabId::vendor(VendorId::Openai)]
+        );
+
+        config.openai.accounts.push(crate::config::OpenAiAccount {
+            label: "work".into(),
+            codex_auth_path: "/tmp/codex-work/auth.json".into(),
+        });
+        assert_eq!(
+            tabs_from_config(&config),
+            vec![TabId::account_for(VendorId::Openai, "work")]
+        );
+    }
+
+    #[test]
     fn tabs_include_accounts_auto_discovered_from_accounts_dir() {
         // A CLAUDE_CONFIG_DIR-style directory becomes account tabs with no
         // explicit [[anthropic.accounts]] entry. Hermetic: real TempDir.
@@ -1268,6 +1363,7 @@ mod tests {
         config.openai.enabled = false;
         config.zai.enabled = false;
         config.openrouter.enabled = false;
+        config.commandcode.enabled = false;
         config.anthropic.accounts_dir = Some(td.path().to_path_buf());
 
         let tabs = tabs_from_config(&config);
@@ -1440,6 +1536,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: Some(fetched_at),
+            display: Default::default(),
         }))
     }
 

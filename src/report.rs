@@ -19,12 +19,24 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::config::Config;
+use crate::context::{ContextScan, ContextSession, ContextUsage};
 use crate::tui::app::{TabId, TabSource, TabState, refresh_one, tabs_with_desktop};
+use crate::tui::context::format_tokens;
 use crate::tui::panels::{Section, sections_with_metadata_for};
 
 /// Matches the widget's `--pace-tolerance` default; only affects the pacing
 /// note appended to a metric's detail line.
 const PACE_TOLERANCE: u32 = 5;
+
+/// Sub-group heading the Claude entry's session rows carry (#255). Frontends
+/// that honour `group` draw them compactly beneath this heading, exactly like
+/// SuperGrok's product slices under `"Breakdown"` (#213).
+const SESSIONS_GROUP: &str = "Sessions";
+
+/// At most this many recent sessions become report rows. The context module
+/// already bounds its scan; this tighter cap keeps one provider's card
+/// readable and leaves room under the popover's per-entry section limit.
+const MAX_SESSION_ROWS: usize = 8;
 
 /// Version of the tolerant, machine-readable `usage --json` contract.
 /// Increment only when an incompatible change cannot be represented by adding
@@ -67,6 +79,13 @@ enum ReportSection {
         percent: u16,
         value: String,
         detail: String,
+        /// Which of `percent` and `value` this metric puts on the bar —
+        /// `"percent"` or `"value"`. A consumer that honours it draws the named
+        /// one and leaves the other in the detail line, rather than inferring a
+        /// balance row from its label. Always present, so no consumer has to
+        /// guess; not every consumer reads it — Waybar and GNOME take their bar
+        /// text from per-vendor formats instead.
+        headline: String,
         severity: String,
         reset_at: Option<DateTime<Utc>>,
         /// Full length of the reset window in seconds, present only when the
@@ -167,6 +186,10 @@ async fn collect_entries_for(
     for tab in tabs {
         entries.push(entry_for(client, config, tab).await);
     }
+    // #255: the opt-in context monitor's sessions ride on the Claude entry,
+    // best-effort — a missing transcript root or unreadable tail adds nothing
+    // rather than failing the report.
+    attach_context_sessions(config, &mut entries).await;
     entries
 }
 
@@ -259,6 +282,7 @@ fn entry_from_state(tab: &TabId, state: &TabState, now: chrono::DateTime<Utc>) -
                     percent: pct,
                     value: value_label,
                     detail: footnote,
+                    headline: projected.headline.as_str().into(),
                     severity: severity.as_str().into(),
                     reset_at: projected.reset_at,
                     window_secs: projected
@@ -281,14 +305,153 @@ fn entry_from_state(tab: &TabId, state: &TabState, now: chrono::DateTime<Utc>) -
 
 fn reset_credits_for(state: &TabState) -> Option<crate::usage::ResetCredits> {
     let credits = match state {
-        TabState::Ready(ready) => match &ready.snapshot {
-            crate::usage::VendorSnapshot::Openai(snapshot) => &snapshot.reset_credits,
-            crate::usage::VendorSnapshot::SuperGrok(snapshot) => &snapshot.reset_credits,
-            _ => return None,
-        },
+        TabState::Ready(ready) => ready.snapshot.reset_credits()?,
         _ => return None,
     };
     (!credits.is_empty()).then(|| credits.clone())
+}
+
+/// #255: surface the opt-in context monitor's recent Claude Code sessions on
+/// the report's Claude entry, as grouped sub-rows under `"Sessions"`.
+///
+/// Sessions are machine-local CLI state, not an account's quota, so they land
+/// on the first ready Claude entry exactly once (never per account), and only
+/// when `[context] enabled` — users who never opted in see no change. A scan
+/// that found nothing, or failed, adds no rows and never fails the report.
+async fn attach_context_sessions(config: &Config, entries: &mut [Entry]) {
+    // Check before scanning: a disabled monitor must not so much as stat the
+    // transcript directory, matching the TUI's own gating.
+    if !config.context.enabled {
+        return;
+    }
+    let sections = session_sections_for(config, scan_context(config).await.as_ref());
+    if sections.is_empty() {
+        return;
+    }
+    attach_session_sections(entries, sections);
+}
+
+/// Run the bounded transcript scan off the async executor, mirroring the TUI
+/// host's own context scan. Any failure — including the join — means "no
+/// sessions to show", not an error for the report to carry.
+async fn scan_context(config: &Config) -> Option<ContextScan> {
+    let context_config = config.context.clone();
+    tokio::task::spawn_blocking(move || {
+        let path = match context_config.projects_path.as_deref() {
+            Some(path) => std::borrow::Cow::Borrowed(path),
+            None => std::borrow::Cow::Owned(crate::context::default_projects_path()?),
+        };
+        crate::context::scan_dir(&path, &context_config)
+    })
+    .await
+    .ok()?
+    .ok()
+}
+
+/// The gating the async path defers to: disabled config or a failed scan
+/// yields no rows, so the opt-in behaviour is testable without a filesystem.
+fn session_sections_for(config: &Config, scan: Option<&ContextScan>) -> Vec<ReportSection> {
+    if !config.context.enabled {
+        return Vec::new();
+    }
+    scan.map(context_session_sections).unwrap_or_default()
+}
+
+/// Extend the first ready Claude entry with `sections`. Entries for other
+/// vendors — and a Claude entry that errored, whose sections the text report
+/// deliberately does not print — are untouched.
+fn attach_session_sections(entries: &mut [Entry], sections: Vec<ReportSection>) {
+    let Some(entry) = entries
+        .iter_mut()
+        .find(|entry| is_claude_entry(entry) && entry.error.is_none())
+    else {
+        return;
+    };
+    entry.sections.extend(sections);
+}
+
+/// Entry ids are `anthropic` or `anthropic@<label>` (a `[[custom]]` provider
+/// is always `custom:<id>`, so the prefix cannot be spoofed by one).
+fn is_claude_entry(entry: &Entry) -> bool {
+    entry.id == "anthropic" || entry.id.starts_with("anthropic@")
+}
+
+/// Project a context scan into report rows: a spacer, then one grouped metric
+/// per recent session carrying its health on the existing severity colours,
+/// and an overflow note when the scan found more sessions than are shown.
+fn context_session_sections(scan: &ContextScan) -> Vec<ReportSection> {
+    if scan.sessions.is_empty() {
+        return Vec::new();
+    }
+    let shown = scan.sessions.len().min(MAX_SESSION_ROWS);
+    let mut sections = Vec::with_capacity(shown + 2);
+    sections.push(ReportSection::Spacer);
+    sections.extend(scan.sessions[..shown].iter().map(session_section));
+    if scan.sessions.len() > shown {
+        sections.push(ReportSection::Text {
+            label: String::new(),
+            value: format!("… and {} more sessions", scan.sessions.len() - shown),
+        });
+    }
+    sections
+}
+
+fn session_section(session: &ContextSession) -> ReportSection {
+    // Transcript titles are untrusted data; the context module already strips
+    // control characters, and the report sink strips the rest (bidi, size).
+    let label = crate::display::sanitize_untrusted_field(&session.display_name());
+    let model = session.model.as_deref().unwrap_or("unknown model");
+    let last_active = crate::format::local_time_hms(session.modified_at);
+    let (percent, value, detail) = match session.usage {
+        ContextUsage::Available {
+            input_tokens,
+            window_tokens: Some(window_tokens),
+            percent: Some(percent),
+        } => {
+            let pct = percent.min(100);
+            (
+                pct,
+                format!("{pct}%"),
+                format!(
+                    "{} / {} tokens · {model} · last active {last_active}",
+                    format_tokens(input_tokens),
+                    format_tokens(window_tokens)
+                ),
+            )
+        }
+        ContextUsage::Available { input_tokens, .. } => (
+            0,
+            format!("{} tokens", format_tokens(input_tokens)),
+            format!("window size is not configured · {model} · last active {last_active}"),
+        ),
+        ContextUsage::Compacted => (
+            0,
+            "compacted".into(),
+            format!(
+                "compacted · waiting for the next response · {model} · last active {last_active}"
+            ),
+        ),
+        ContextUsage::Unknown => (
+            0,
+            "unknown".into(),
+            format!("context usage unavailable · {model} · last active {last_active}"),
+        ),
+    };
+    ReportSection::Metric {
+        label,
+        percent,
+        value,
+        detail,
+        headline: "percent".into(),
+        // Same mapping the TUI's context detail uses, so a session at 90%
+        // reads as saturated in every surface that draws severity colours.
+        severity: crate::pango::severity_for(i32::from(percent))
+            .as_str()
+            .into(),
+        reset_at: None,
+        window_secs: None,
+        group: Some(SESSIONS_GROUP.into()),
+    }
 }
 
 /// Process status after a complete document has been printed.
@@ -302,8 +465,9 @@ fn report_exit_code(entries: &[Entry]) -> i32 {
 
 /// Stable machine id shared by aggregate views and the macOS menu bar:
 /// `<vendor>@<label>` for named accounts, `custom:<id>` for a `[[custom]]`
-/// provider (which never has accounts).
-fn tab_id(tab: &TabId) -> String {
+/// provider (which never has accounts). Also the entry half of the
+/// notification dedupe key.
+pub(crate) fn tab_id(tab: &TabId) -> String {
     match &tab.source {
         TabSource::Custom { id, .. } => format!("custom:{id}"),
         TabSource::Builtin(vendor) => match &tab.account {
@@ -371,10 +535,32 @@ fn format_tab_name(tab: &TabId, vendor_name: &str) -> String {
     crate::display::sanitize_untrusted_field(&name)
 }
 
+/// Resolve the `primary` the report should name to an id `entries` actually
+/// carries.
+///
+/// `config.ui.primary` is a vendor slug, but with named accounts the entry
+/// ids are `vendor@account`, so the raw slug names an id no entry has —
+/// `primary: "anthropic"` next to `anthropic@claude-me`. The first entry of
+/// that vendor (the bare slug, or the first `{slug}@…` account) wins; a slug
+/// with no matching entry is kept as-is, because the config naming a
+/// disabled or absent vendor is information worth reporting, not something
+/// to paper over with a guess. `None` (unset) stays `None`.
+fn resolve_primary(primary: Option<&str>, entries: &[Entry]) -> Option<String> {
+    primary.map(|slug| {
+        // The `@` suffix keeps a slug that is a prefix of another vendor's
+        // ("openai" vs "openrouter") from matching that vendor's accounts.
+        entries
+            .iter()
+            .find(|entry| entry.id == slug || entry.id.starts_with(&format!("{slug}@")))
+            .map(|entry| entry.id.clone())
+            .unwrap_or_else(|| slug.to_string())
+    })
+}
+
 fn render_json_for_primary(entries: &[Entry], primary: Option<&str>) -> String {
     json!({
         "schema_version": USAGE_SCHEMA_VERSION,
-        "primary": primary,
+        "primary": resolve_primary(primary, entries),
         "entries": json_rows(entries),
     })
     .to_string()
@@ -403,6 +589,7 @@ fn json_rows(entries: &[Entry]) -> Vec<serde_json::Value> {
                         percent,
                         value,
                         detail,
+                        headline,
                         severity,
                         reset_at,
                         window_secs,
@@ -413,6 +600,7 @@ fn json_rows(entries: &[Entry]) -> Vec<serde_json::Value> {
                             "percent": percent,
                             "value": value,
                             "detail": detail,
+                            "headline": headline,
                             "severity": severity,
                             "reset_at": reset_at,
                         });
@@ -568,6 +756,7 @@ mod tests {
             percent,
             value: value.into(),
             detail: detail.into(),
+            headline: "percent".into(),
             severity: "mid".into(),
             reset_at: None,
             window_secs: None,
@@ -732,6 +921,89 @@ mod tests {
         assert_eq!(value["entries"][1]["id"], "openai");
     }
 
+    /// #228: `config.ui.primary` is a vendor slug, but entry ids carry
+    /// account labels for named accounts, so the reported `primary` is
+    /// resolved to an id one of the entries actually has.
+    #[test]
+    fn primary_resolves_to_an_entry_id_the_report_actually_carries() {
+        // Bare entries: the slug already is an entry id, so it stays.
+        let bare = vec![entry("anthropic", Vec::new()), entry("openai", Vec::new())];
+        assert_eq!(
+            resolve_primary(Some("anthropic"), &bare),
+            Some("anthropic".into())
+        );
+
+        // Named accounts only: the first account's entry id is reported, so
+        // `primary` names an id `entries` carries.
+        let accounts = vec![
+            entry("anthropic@claude-me", Vec::new()),
+            entry("anthropic@claude-b3", Vec::new()),
+        ];
+        assert_eq!(
+            resolve_primary(Some("anthropic"), &accounts),
+            Some("anthropic@claude-me".into())
+        );
+
+        // A bare entry wins over accounts of the same vendor: it is the
+        // first entry the slug matches.
+        let mixed = vec![
+            entry("anthropic", Vec::new()),
+            entry("anthropic@claude-me", Vec::new()),
+        ];
+        assert_eq!(
+            resolve_primary(Some("anthropic"), &mixed),
+            Some("anthropic".into())
+        );
+
+        // A slug that prefixes another vendor's name must not match that
+        // vendor's entries: the `@` delimiter is what keeps this exact.
+        let openrouter = vec![entry("openrouter@work", Vec::new())];
+        assert_eq!(
+            resolve_primary(Some("openai"), &openrouter),
+            Some("openai".into())
+        );
+
+        // No matching entry: the config names a disabled or absent vendor,
+        // which is worth reporting as-is rather than papering over.
+        assert_eq!(
+            resolve_primary(Some("cursor"), &accounts),
+            Some("cursor".into())
+        );
+
+        // Unset stays unset.
+        assert_eq!(resolve_primary(None, &accounts), None);
+    }
+
+    /// The same resolution as seen through the rendered JSON: consumers may
+    /// now treat `primary` as an entry id present in `entries`.
+    #[test]
+    fn json_primary_resolves_to_the_first_named_account_entry() {
+        let rendered = render_json_for_primary(
+            &[
+                entry("anthropic@claude-me", Vec::new()),
+                entry("anthropic@claude-b3", Vec::new()),
+            ],
+            Some("anthropic"),
+        );
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(value["primary"], "anthropic@claude-me");
+        let ids: Vec<&str> = value["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&value["primary"].as_str().unwrap()));
+
+        // The honest fallback: a primary naming a vendor with no entries
+        // keeps the slug instead of picking some other entry.
+        let unmatched =
+            render_json_for_primary(&[entry("anthropic@claude-me", Vec::new())], Some("cursor"));
+        let value: serde_json::Value = serde_json::from_str(&unmatched).unwrap();
+        assert_eq!(value["primary"], "cursor");
+        assert_eq!(value["entries"][0]["id"], "anthropic@claude-me");
+    }
+
     #[test]
     fn every_json_report_declares_its_schema_version() {
         let aggregate: serde_json::Value = serde_json::from_str(&render_json_for_primary(
@@ -760,6 +1032,7 @@ mod tests {
             stale: true,
             last_error: None,
             fetched_at: Some(fetched_at),
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Kiro), &state, Utc::now());
         let rendered = render_json_for_primary(&[projected], None);
@@ -777,6 +1050,265 @@ mod tests {
         // must not be handed a length to pace against.
         assert!(first["metrics"][0]["window_secs"].is_null());
         assert!(first["sections"][1].get("window_secs").is_none());
+    }
+
+    // --- #255: Claude CLI sessions as grouped report rows ----------------------
+    fn context_session(id: &str, usage: ContextUsage) -> ContextSession {
+        ContextSession {
+            session_id: id.into(),
+            title: Some(format!("title {id}")),
+            project: "project".into(),
+            model: Some("claude-test".into()),
+            modified_at: "2026-09-25T12:34:56Z".parse().unwrap(),
+            usage,
+        }
+    }
+
+    fn context_scan(sessions: Vec<ContextSession>) -> ContextScan {
+        let count = sessions.len();
+        ContextScan {
+            sessions,
+            discovered: count,
+            skipped: 0,
+            walk_capped: false,
+        }
+    }
+
+    fn enabled_context_config() -> Config {
+        Config {
+            context: crate::config::ContextConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Sessions project as `"Sessions"`-grouped metric rows whose severity is
+    /// the existing percent mapping — a 90% context reads as saturated in the
+    /// same colours every quota row uses — while compacted/unknown sessions
+    /// keep the TUI overlay's honest non-numeric labels instead of a fabricated
+    /// percentage.
+    #[test]
+    fn sessions_project_as_grouped_rows_with_health() {
+        let modified_at: chrono::DateTime<Utc> = "2026-09-25T12:34:56Z".parse().unwrap();
+        let scan = context_scan(vec![
+            context_session(
+                "saturated",
+                ContextUsage::Available {
+                    input_tokens: 180_000,
+                    window_tokens: Some(200_000),
+                    percent: Some(90),
+                },
+            ),
+            context_session(
+                "open-window",
+                ContextUsage::Available {
+                    input_tokens: 45_120,
+                    window_tokens: None,
+                    percent: None,
+                },
+            ),
+            context_session("compacted", ContextUsage::Compacted),
+            context_session("unknown", ContextUsage::Unknown),
+        ]);
+
+        let sections = session_sections_for(&enabled_context_config(), Some(&scan));
+        assert!(matches!(sections.first(), Some(ReportSection::Spacer)));
+
+        let metric = |id: &str| {
+            sections
+                .iter()
+                .find(|section| {
+                    matches!(
+                        section,
+                        ReportSection::Metric { label, .. } if *label == format!("title {id}")
+                    )
+                })
+                .unwrap_or_else(|| panic!("no session row for {id}: {sections:?}"))
+        };
+
+        let ReportSection::Metric {
+            percent,
+            value,
+            detail,
+            severity,
+            group,
+            headline,
+            ..
+        } = metric("saturated")
+        else {
+            unreachable!();
+        };
+        assert_eq!(*percent, 90);
+        assert_eq!(value, "90%");
+        assert_eq!(*severity, "critical");
+        assert_eq!(group.as_deref(), Some("Sessions"));
+        assert_eq!(headline, "percent");
+        assert!(detail.contains("180,000 / 200,000 tokens"), "{detail}");
+        assert!(detail.contains("claude-test"), "{detail}");
+        assert!(
+            detail.contains(&crate::format::local_time_hms(modified_at)),
+            "{detail}"
+        );
+
+        let ReportSection::Metric { percent, value, .. } = metric("open-window") else {
+            unreachable!();
+        };
+        assert_eq!(*percent, 0);
+        assert_eq!(value, "45,120 tokens");
+
+        let ReportSection::Metric { value, .. } = metric("compacted") else {
+            unreachable!();
+        };
+        assert_eq!(value, "compacted");
+
+        let ReportSection::Metric { value, .. } = metric("unknown") else {
+            unreachable!();
+        };
+        assert_eq!(value, "unknown");
+    }
+
+    /// The row cap keeps one provider's card readable and says so: the scan is
+    /// bounded at 100 sessions, but only the first 8 become rows, with an
+    /// overflow note instead of a silent cut.
+    #[test]
+    fn session_rows_are_capped_with_an_overflow_note() {
+        let sessions: Vec<_> = (0..(MAX_SESSION_ROWS + 3))
+            .map(|i| {
+                context_session(
+                    &format!("s{i}"),
+                    ContextUsage::Available {
+                        input_tokens: 1,
+                        window_tokens: Some(100),
+                        percent: Some(1),
+                    },
+                )
+            })
+            .collect();
+        let scan = context_scan(sessions);
+
+        let sections = session_sections_for(&enabled_context_config(), Some(&scan));
+        let rows = sections
+            .iter()
+            .filter(|section| matches!(section, ReportSection::Metric { .. }))
+            .count();
+        assert_eq!(rows, MAX_SESSION_ROWS);
+        assert!(matches!(
+            sections.last(),
+            Some(ReportSection::Text { value, .. }) if value == "… and 3 more sessions"
+        ));
+    }
+
+    /// The monitor is opt-in: a disabled `[context]` never reads the
+    /// transcript directory and never adds a row, and an enabled-but-failed
+    /// scan adds nothing rather than failing the report.
+    #[test]
+    fn a_disabled_context_monitor_adds_no_session_rows() {
+        let scan = context_scan(vec![context_session("one", ContextUsage::Unknown)]);
+
+        let disabled = Config::default();
+        assert!(!disabled.context.enabled);
+        assert!(session_sections_for(&disabled, Some(&scan)).is_empty());
+
+        assert!(session_sections_for(&enabled_context_config(), None).is_empty());
+        assert!(
+            session_sections_for(&enabled_context_config(), Some(&context_scan(Vec::new())))
+                .is_empty()
+        );
+    }
+
+    /// Sessions are machine-local, so they land on the first *ready* Claude
+    /// entry exactly once — never on another vendor, never on every Claude
+    /// account, and never on an errored entry whose sections the text report
+    /// does not print.
+    #[test]
+    fn sessions_attach_to_the_first_ready_claude_entry_only() {
+        let mut failed = entry("anthropic", Vec::new());
+        failed.error = Some("not signed in".into());
+        let mut entries = vec![
+            entry("openai", vec![metric("Weekly", 5, "5%", "")]),
+            failed,
+            entry("anthropic@gmail", vec![metric("Weekly", 5, "5%", "")]),
+            entry("anthropic@work", vec![metric("Weekly", 5, "5%", "")]),
+        ];
+
+        let sections = session_sections_for(
+            &enabled_context_config(),
+            Some(&context_scan(vec![context_session(
+                "one",
+                ContextUsage::Unknown,
+            )])),
+        );
+        let before: Vec<usize> = entries.iter().map(|e| e.sections.len()).collect();
+        attach_session_sections(&mut entries, sections);
+
+        // The errored default entry is skipped; the first ready Claude entry
+        // (the gmail account) gains the rows, and every other entry is
+        // byte-for-byte where it was.
+        assert_eq!(entries[0].sections.len(), before[0]);
+        assert_eq!(entries[1].sections.len(), before[1]);
+        assert!(entries[2].sections.len() > before[2]);
+        assert_eq!(
+            entries[2].sections.len() - before[2],
+            2,
+            "spacer + one session row"
+        );
+        assert_eq!(entries[3].sections.len(), before[3]);
+        assert!(entries[2].sections.iter().any(|section| matches!(section,
+                ReportSection::Metric { label, group, .. }
+                    if label == "title one" && group.as_deref() == Some("Sessions"))));
+    }
+
+    /// The session rows reach both JSON views — the ordered `sections` and the
+    /// `metrics` convenience — carrying the `"Sessions"` group, so a frontend
+    /// that renders groups (#213/#230) draws them under one heading.
+    #[test]
+    fn json_carries_session_rows_in_both_views() {
+        let mut claude = entry("anthropic", vec![metric("Session (5h)", 29, "29%", "")]);
+        let sections = session_sections_for(
+            &enabled_context_config(),
+            Some(&context_scan(vec![context_session(
+                "one",
+                ContextUsage::Available {
+                    input_tokens: 180_000,
+                    window_tokens: Some(200_000),
+                    percent: Some(90),
+                },
+            )])),
+        );
+        claude.sections.extend(sections);
+        let entries = [claude];
+
+        // The human-readable report prints the same rows, so a CLI consumer
+        // sees the sessions too.
+        let text = render_text(&entries);
+        assert!(text.contains("title one"), "{text}");
+        assert!(text.contains("90%"), "{text}");
+
+        let value: serde_json::Value =
+            serde_json::from_str(&render_json_for_primary(&entries, None)).unwrap();
+        let first = &value["entries"][0];
+        let session_section = first["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|section| section["group"] == "Sessions")
+            .expect("a session section");
+        assert_eq!(session_section["label"], "title one");
+        assert_eq!(session_section["percent"], 90);
+        assert_eq!(session_section["severity"], "critical");
+        assert!(session_section["reset_at"].is_null());
+        assert!(session_section.get("window_secs").is_none());
+
+        let session_metric = first["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|metric| metric["group"] == "Sessions")
+            .expect("a session metric");
+        assert_eq!(session_metric["label"], "title one");
+        assert_eq!(session_metric["severity"], "critical");
     }
 
     /// Grouped sub-rows (SuperGrok's product slices) carry their group in both
@@ -804,6 +1336,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Supergrok), &state, Utc::now());
         let rendered = render_json_for_primary(&[projected], None);
@@ -842,6 +1375,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Openai), &state, Utc::now());
         let value: serde_json::Value =
@@ -850,6 +1384,62 @@ mod tests {
 
         assert_eq!(entry["reset_credits"]["available"], 2);
         assert_eq!(entry["reset_credits"]["credits"][0]["title"], "Full reset");
+        assert_eq!(
+            entry["reset_credits"]["credits"][0]["expires_at"],
+            expiry.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+        );
+        assert!(
+            entry["sections"].as_array().unwrap().iter().any(|section| {
+                section["type"] == "block" && section["label"] == "Reset credits"
+            })
+        );
+    }
+
+    /// The sidebar reads `reset_credits` off the entry, so Claude's grant has
+    /// to arrive through the same field Codex and SuperGrok already use —
+    /// not a Claude-shaped one a frontend would have to learn.
+    #[test]
+    fn json_exposes_claude_reset_credit_expiries() {
+        let expiry: DateTime<Utc> = "2026-10-22T16:00:00Z".parse().unwrap();
+        let state = TabState::Ready(Box::new(ReadyTab {
+            snapshot: VendorSnapshot::Anthropic(crate::usage::AnthropicSnapshot {
+                plan: "Max 20x".into(),
+                session: crate::usage::UsageWindow {
+                    utilization_pct: 2,
+                    resets_at: None,
+                    window_duration: chrono::Duration::hours(5),
+                },
+                weekly: crate::usage::UsageWindow {
+                    utilization_pct: 63,
+                    resets_at: None,
+                    window_duration: chrono::Duration::days(7),
+                },
+                sonnet: None,
+                scoped: Vec::new(),
+                extra: None,
+                reset_credits: ResetCredits {
+                    available: 1,
+                    credits: vec![ResetCredit {
+                        title: Some("Opus 5.5 launch reset".into()),
+                        expires_at: Some(expiry),
+                    }],
+                },
+            }),
+            stale: false,
+            last_error: None,
+            fetched_at: None,
+            display: Default::default(),
+        }));
+        let projected = entry_from_state(&TabId::vendor(VendorId::Anthropic), &state, Utc::now());
+        let value: serde_json::Value =
+            serde_json::from_str(&render_json_for_primary(&[projected], None)).unwrap();
+        let entry = &value["entries"][0];
+
+        assert_eq!(entry["reset_credits"]["available"], 1);
+        assert_eq!(
+            entry["reset_credits"]["credits"][0]["title"],
+            "Opus 5.5 launch reset"
+        );
         assert_eq!(
             entry["reset_credits"]["credits"][0]["expires_at"],
             expiry.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
@@ -884,6 +1474,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Supergrok), &state, Utc::now());
         let value: serde_json::Value =
@@ -921,10 +1512,12 @@ mod tests {
                 sonnet: None,
                 scoped: vec![],
                 extra: None,
+                reset_credits: Default::default(),
             }),
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Anthropic), &state, now);
         let rendered = render_json_for_primary(&[projected], None);
@@ -1046,6 +1639,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Kimi), &state, Utc::now());
         // Pair each reset with its own row rather than pinning the row order —
@@ -1121,6 +1715,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Openrouter), &state, Utc::now());
         assert!(projected.sections.iter().any(|section| matches!(
@@ -1152,6 +1747,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: None,
+            display: Default::default(),
         }));
         let projected = entry_from_state(&TabId::vendor(VendorId::Deepseek), &state, Utc::now());
         assert!(projected.sections.iter().any(|section| matches!(
@@ -1164,6 +1760,87 @@ mod tests {
                 .iter()
                 .any(|section| matches!(section, ReportSection::Metric { .. }))
         );
+    }
+
+    /// Every metric declares which of its two numbers goes on the bar, in both
+    /// the ordered `sections` list and the `metrics` convenience view, so no
+    /// frontend has to infer a balance row from its label.
+    #[test]
+    fn json_metrics_name_their_headline() {
+        let deepseek = |display: crate::balance::DisplayPrefs| {
+            let state = TabState::Ready(Box::new(ReadyTab {
+                snapshot: VendorSnapshot::Deepseek(DeepseekSnapshot {
+                    is_available: true,
+                    balance: 50.0,
+                    granted: 50.0,
+                    topped_up: 0.0,
+                    currency: "USD".into(),
+                }),
+                stale: false,
+                last_error: None,
+                fetched_at: None,
+                display,
+            }));
+            let entry = entry_from_state(&TabId::vendor(VendorId::Deepseek), &state, Utc::now());
+            let rendered = render_json_entries(&[entry]);
+            serde_json::from_str::<serde_json::Value>(&rendered).unwrap()
+        };
+
+        let amount = deepseek(crate::balance::DisplayPrefs::balance(
+            Some(200.0),
+            crate::balance::Headline::Amount,
+        ));
+        let metric = &amount["entries"][0]["metrics"][0];
+        assert_eq!(metric["headline"], "value");
+        assert_eq!(metric["percent"], 75);
+        assert_eq!(metric["value"], "$50.00");
+        assert!(
+            metric["detail"].as_str().unwrap().contains("$200.00"),
+            "{metric}"
+        );
+
+        let percent = deepseek(crate::balance::DisplayPrefs::balance(
+            Some(200.0),
+            crate::balance::Headline::Percent,
+        ));
+        let section = percent["entries"][0]["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|section| section["type"] == "metric")
+            .expect("a metric section");
+        assert_eq!(section["headline"], "percent");
+        assert_eq!(section["value"], "75%");
+        assert!(
+            section["detail"].as_str().unwrap().contains("$50.00"),
+            "{section}"
+        );
+
+        // A quota vendor is unchanged: still a percent headline.
+        let anthropic_api = entry_from_state(
+            &TabId::vendor(VendorId::Openrouter),
+            &TabState::Ready(Box::new(ReadyTab {
+                snapshot: VendorSnapshot::Openrouter(crate::usage::OpenRouterSnapshot {
+                    label: "OpenRouter".into(),
+                    total_credits: 100.0,
+                    total_usage: 40.0,
+                    usage_daily: 0.0,
+                    usage_weekly: 0.0,
+                    usage_monthly: 0.0,
+                    is_free_tier: false,
+                    limit: None,
+                    limit_remaining: None,
+                }),
+                stale: false,
+                last_error: None,
+                fetched_at: None,
+                display: Default::default(),
+            })),
+            Utc::now(),
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&render_json_entries(&[anthropic_api])).unwrap();
+        assert_eq!(value["entries"][0]["metrics"][0]["headline"], "percent");
     }
 
     #[test]
@@ -1311,6 +1988,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at: Some(now),
+            display: Default::default(),
         }));
         let projected = entry_from_state(&tab, &state, now);
         assert_eq!(projected.id, "custom:mytool");

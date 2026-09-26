@@ -23,11 +23,13 @@ use crate::kilo;
 use crate::kimi;
 use crate::kiro;
 use crate::minimax;
+use crate::modelstudio;
 use crate::moonshot;
 use crate::novita;
 use crate::ollama;
 use crate::openai;
 use crate::openrouter;
+use crate::orcarouter;
 use crate::pango::escape;
 use crate::supergrok;
 use crate::theme::Theme;
@@ -167,6 +169,8 @@ async fn build_output(cli: &Cli) -> Result<WaybarOutput> {
         Vendor::OpenCodeGo => opencode_go_output(cli, &config).await,
         Vendor::CommandCode => commandcode_output(cli, &config).await,
         Vendor::Ollama => ollama_output(cli, &config).await,
+        Vendor::OrcaRouter => orcarouter_output(cli, &config).await,
+        Vendor::ModelStudio => modelstudio_output(cli, &config).await,
     }
 }
 
@@ -319,6 +323,43 @@ async fn ollama_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
     let snapshot = outcome.snapshot.clone();
     let vendor_outcome: VendorOutcome = outcome.into();
     Ok(ollama::vendor::render(
+        &vendor_outcome,
+        &snapshot,
+        &theme_from_cli(cli),
+        &RenderOpts::from_cli(cli),
+        Utc::now(),
+    ))
+}
+
+/// OrcaRouter: Bearer key against the one-api compatible dashboard billing
+/// endpoints — spend in US cents, total credit limit, key expiry.
+async fn orcarouter_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
+    let api_key = crate::config::resolve_api_key(
+        "OrcaRouter",
+        &config.orcarouter.api_key_env,
+        config.orcarouter.api_key.as_deref(),
+    )?;
+    let client = http_client()?;
+    let cache = vendor_cache(cli, "orcarouter")?;
+    let endpoints = orcarouter::fetch::Endpoints::default();
+    let outcome = match orcarouter::fetch_snapshot(
+        &client,
+        &api_key,
+        &cache,
+        &endpoints,
+        DEFAULT_TTL,
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) if error.is_transient() => {
+            return Ok(WaybarOutput::loading(cli.icon.as_deref()));
+        }
+        Err(error) => return Err(error),
+    };
+    let snapshot = outcome.snapshot.clone();
+    let vendor_outcome: VendorOutcome = outcome.into();
+    Ok(orcarouter::vendor::render(
         &vendor_outcome,
         &snapshot,
         &theme_from_cli(cli),
@@ -672,32 +713,41 @@ async fn anthropic_api_output(cli: &Cli, config: &Config) -> Result<WaybarOutput
     ))
 }
 
-/// Resolve a Codex login and its cache as one identity, the way
-/// [`openrouter_target`] does for a key. The default login keeps the historical
+/// The cache for the Codex login `--account` names, kept to one identity the
+/// way [`openrouter_target`] does for a key. The default login keeps the historical
 /// vendor-root cache; each named account is isolated below `openai/<label>`, so
 /// two ChatGPT subscriptions never serve each other's usage from a warm cache.
-fn openai_target(cli: &Cli, config: &Config) -> Result<(std::path::PathBuf, Cache)> {
-    let label = cli.account.as_deref();
-    let creds_path = config.openai.resolve_auth_path(label)?;
-    let cache = match (cli.cache_dir.as_deref(), label) {
+///
+/// The login's path is resolved inside the fetch, under its lock, because
+/// `account switch --codex` can move it between two looks.
+fn openai_cache(cli: &Cli) -> Result<Cache> {
+    Ok(match (cli.cache_dir.as_deref(), cli.account.as_deref()) {
         (Some(root), Some(label)) => Cache::at(root.join("openai").join(label)),
         (Some(root), None) => Cache::at(root.join("openai")),
         (None, Some(label)) => Cache::for_vendor_account("openai", label)?,
         (None, None) => Cache::for_vendor("openai")?,
-    };
-    Ok((creds_path, cache))
+    })
 }
 
 async fn openai_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
     let client = http_client()?;
-    let (creds_path, cache) = openai_target(cli, config)?;
+    let label = cli.account.as_deref();
+    let route = || config.openai.fetch_auth_path(label);
+    let cache = openai_cache(cli)?;
     let endpoints = openai::fetch::Endpoints::default();
-    let outcome =
-        match openai::fetch_snapshot(&client, &creds_path, &cache, &endpoints, DEFAULT_TTL).await {
-            Ok(o) => o,
-            Err(e) if e.is_transient() => return Ok(WaybarOutput::loading(cli.icon.as_deref())),
-            Err(e) => return Err(e),
-        };
+    let outcome = match openai::fetch_snapshot_routed(
+        &client,
+        route,
+        &cache,
+        &endpoints,
+        DEFAULT_TTL,
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(e) if e.is_transient() => return Ok(WaybarOutput::loading(cli.icon.as_deref())),
+        Err(e) => return Err(e),
+    };
 
     let theme = theme_from_cli(cli);
     let snap = outcome.snapshot.clone();
@@ -909,6 +959,35 @@ async fn grokbot_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
     ))
 }
 
+/// Model Studio has no key of its own: the `bl` CLI's console session is the
+/// login, and its region/site pair picks the gateway.
+async fn modelstudio_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
+    let creds = modelstudio::resolve_credentials(&config.modelstudio)?;
+    let client = http_client()?;
+    let cache = vendor_cache(cli, "modelstudio")?;
+    let endpoints = modelstudio::fetch::Endpoints::for_gateway(creds.region, creds.site);
+    let outcome =
+        match modelstudio::fetch_snapshot_with(&client, &creds, &cache, &endpoints, DEFAULT_TTL)
+            .await
+        {
+            Ok(o) => o,
+            Err(e) if e.is_transient() => return Ok(WaybarOutput::loading(cli.icon.as_deref())),
+            Err(e) => return Err(e),
+        };
+
+    let theme = theme_from_cli(cli);
+    let snap = outcome.snapshot.clone();
+    let vendor_outcome: VendorOutcome = outcome.into();
+    let opts = RenderOpts::from_cli(cli);
+    Ok(modelstudio::vendor::render(
+        &vendor_outcome,
+        &snap,
+        &theme,
+        &opts,
+        chrono::Utc::now(),
+    ))
+}
+
 async fn anthropic_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
     let client = http_client()?;
     let (creds_target, cache) = anthropic_target(cli, config)?;
@@ -1087,6 +1166,7 @@ mod tests {
                 sonnet: None,
                 scoped: vec![],
                 extra: None,
+                reset_credits: Default::default(),
             },
             stale: false,
             last_error: None,

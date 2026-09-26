@@ -37,8 +37,8 @@ Antigravity provides elapsed values plus `{session_model}`, `{weekly_model}`,
 `{scoped_model}`, and `{extra_model}` for whichever of its four windows the
 running product reports — a product that exposes only weekly buckets leaves the
 5-hour placeholders empty rather than reporting a figure it never received.
-Provider-specific families such as `{oai_*}`, `{zai_*}`, and `{or_*}` are empty
-for providers that do not define them.
+Provider-specific families such as `{oai_*}`, `{zai_*}`, `{or_*}`, and
+`{orc_*}` are empty for providers that do not define them.
 
 ## Shared and Claude placeholders
 
@@ -53,9 +53,19 @@ These are compatible with claudebar.
 | `{sonnet_*}` | The same family for the seven-day Sonnet window. Empty when absent. |
 | `{scoped_model}`, `{scoped_pct}`, `{scoped_reset}`, `{scoped_elapsed}`, `{scoped_bar}` | `Fable`, `84`, `5d 2h`, `27`, `█████████████████░░░` |
 | `{extra_spent}`, `{extra_limit}`, `{extra_pct}`, `{extra_bar}` | `$2.50`, `$50.00`, `5`, `█░░░░░░░░░░░░░░░░░░░` |
+| `{resets_available}`, `{resets}` | `1`, `1 reset available` |
 
 The scoped family describes the first model-specific weekly window. When that
 window is absent, it returns neutral empty, `0`, or `—` values as appropriate.
+
+`{resets_available}` is the number of banked limit resets Claude is offering —
+the ones the app shows under "Resets", which you redeem by hand rather than
+waiting for `{session_reset}`. `{resets}` is the compact count (`1 reset
+available`); it reads `0 resets available` when there is no grant, so gate the
+row on `{resets_available}` if you only want it when there is one. The
+per-grant labels and expiry dates appear in the default tooltip and in the TUI
+panel. Claude only offers these during a campaign, and only to accounts it
+selects — most of the time both are `0`.
 
 ## Codex
 
@@ -150,6 +160,32 @@ reports only `percent` and `resetsAt`, never a duration.
 `{or_consumed_pct}`, `{or_free_tier}`, `{or_limit}`,
 `{or_limit_remaining}`, `{or_balance_bar}`
 
+## OrcaRouter
+
+`{orc_spend}`, `{orc_limit}`, `{orc_remaining}`, `{orc_consumed_pct}`,
+`{orc_expires}`, `{orc_bar}`
+
+These report the one-api compatible dashboard billing card. `{orc_spend}` is
+cumulative usage (the API reports it in US cents; `275` renders as `$2.75`).
+
+## Model Studio
+
+`{mst_plan}`, `{mst_session_pct}`, `{mst_session_reset}`,
+`{mst_session_elapsed}`, `{mst_session_pace}`,
+`{mst_session_pace_indicator}`, `{mst_weekly_pct}`, `{mst_weekly_reset}`,
+`{mst_weekly_elapsed}`, `{mst_weekly_pace}`,
+`{mst_weekly_pace_indicator}`
+
+The default bar format is `5h {mst_session_pct}% · 7d {mst_weekly_pct}%`.
+`{session_*}` and `{weekly_*}` are cross-provider aliases. The API has no plan
+name, so `{mst_plan}` is always `Model Studio`. An absent window (no-data,
+possibly unlimited) expands to the empty string — never `0%`. The percentages
+are whole numbers: the wire carries ratios in `[0,1]` (`0.4217` → `42`).
+`{orc_limit}` and `{orc_remaining}` render `unlimited` for unlimited-quota
+keys — the API's `100000000` sentinel is collapsed to "no limit" rather than a
+$100M wallet, and `{orc_consumed_pct}` renders `—`. `{orc_expires}` counts
+down to the key's `access_until`, or `—` when it has no expiry.
+
 ## DeepSeek
 
 `{ds_balance}`, `{ds_granted}`, `{ds_topped_up}`, `{ds_available}`
@@ -184,7 +220,7 @@ instead. On legacy-shape accounts the monthly placeholders render empty.
 
 These cover the desktop app's weekly included-usage pool from
 `api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus`
-(Linux-only for now). The default format is `{gbt_weekly_pct}%`. Generic
+(Linux and macOS). The default format is `{gbt_weekly_pct}%`. Generic
 aliases are `{plan}` and `{weekly_pct}` / `{weekly_reset}`.
 `{gbt_on_demand}` renders `on`/`off` for pay-as-you-go past the included
 pool.

@@ -35,13 +35,7 @@ impl FooterBinding {
     }
 }
 
-pub fn draw(f: &mut Frame, app: &App) {
-    let mut hit = app.hit.borrow_mut();
-    hit.settings_rows.clear();
-    hit.nav_entries.clear();
-    hit.footer_actions.clear();
-    drop(hit);
-
+pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -55,10 +49,15 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_body(f, app, chunks[1]);
     draw_footer(f, app, chunks[2]);
 
-    // Settings still floats on top of everything.
+    // Settings still floats on top of everything. render() scrolls the
+    // overlay body to follow focus, which needs the mutable state.
     let mut hit = app.hit.borrow_mut();
-    if let Some(s) = &app.settings {
-        crate::tui::settings::render(f, f.area(), s, &app.theme, &mut hit.settings_rows);
+    
+    if app.settings.is_some() {
+        let theme = app.theme.clone();
+        if let Some(s) = app.settings.as_mut() {
+            crate::tui::settings::render(f, f.area(), s, &theme, &mut hit.settings_rows);
+        }
     }
 }
 
@@ -531,6 +530,7 @@ mod tests {
             stale: false,
             last_error: None,
             fetched_at,
+            display: Default::default(),
         }))
     }
 
@@ -547,6 +547,33 @@ mod tests {
         );
         app.tabs = tabs;
         app
+    }
+
+    /// A settings overlay state covering every field, for hit-rect tests.
+    fn settings_state() -> crate::tui::settings::SettingsState {
+        use crate::tui::settings::{KeyInput, ProviderSwitch, SettingsState};
+
+        SettingsState {
+            focus: crate::tui::settings::Focus::Primary,
+            primary_choices: vec![VendorId::Anthropic],
+            primary: VendorId::Anthropic,
+            keys: crate::tui::settings::KEY_VENDORS
+                .iter()
+                .map(|_| KeyInput::default())
+                .collect(),
+            vendors: VendorId::all()
+                .iter()
+                .map(|_| ProviderSwitch {
+                    enabled: false,
+                    dirty: false,
+                })
+                .collect(),
+            notify_enabled: true,
+            notify_enabled_dirty: false,
+            notify_threshold: KeyInput::from_config(Some("97")),
+            status: String::new(),
+            scroll: 0,
+        }
     }
 
     #[test]
@@ -597,7 +624,7 @@ mod tests {
         let tab = app.tabs_meta[0].clone();
         assert!(app.begin_refresh(&tab));
 
-        let out = body_text(&app);
+        let out = body_text(&mut app);
         assert!(out.contains("$0.00"), "ready metrics disappeared: {out}");
         assert!(out.contains('↻'), "refresh indicator missing: {out}");
         assert!(!out.contains("fetching…"), "ready row flickered: {out}");
@@ -615,7 +642,7 @@ mod tests {
         app
     }
 
-    fn body_text(app: &App) -> String {
+    fn body_text(app: &mut App) -> String {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
         let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
@@ -633,7 +660,7 @@ mod tests {
     #[test]
     fn full_layout_takes_the_body_and_hides_the_vendor_sidebar() {
         use crate::config::ContextLayout;
-        let out = body_text(&app_with_context(ContextLayout::Full));
+        let out = body_text(&mut app_with_context(ContextLayout::Full));
         assert!(out.contains("Claude context"), "{out}");
         assert!(
             !out.contains("vendors"),
@@ -645,7 +672,7 @@ mod tests {
     fn split_and_bottom_layouts_keep_the_dashboard_visible() {
         use crate::config::ContextLayout;
         for layout in [ContextLayout::Split, ContextLayout::Bottom] {
-            let out = body_text(&app_with_context(layout));
+            let out = body_text(&mut app_with_context(layout));
             assert!(out.contains("Claude context"), "{layout:?}: {out}");
             assert!(out.contains("vendors"), "{layout:?}: {out}");
         }
@@ -659,7 +686,7 @@ mod tests {
         fn rendered(mut app: App, enabled: bool) -> String {
             app.context_enabled = enabled;
             let mut terminal = Terminal::new(TestBackend::new(160, 24)).unwrap();
-            terminal.draw(|frame| draw(frame, &app)).unwrap();
+            terminal.draw(|frame| draw(frame, &mut app)).unwrap();
             terminal
                 .backend()
                 .buffer()
@@ -759,7 +786,7 @@ mod tests {
         let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
         app.overview = true;
         let mut terminal = Terminal::new(TestBackend::new(160, 24)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         assert_eq!(hit.nav_entries.len(), 3); // Overview + two tabs
@@ -786,7 +813,7 @@ mod tests {
         app.overview = true;
         app.vendor_box = crate::config::VendorBoxStyle::Navbar;
         let mut terminal = Terminal::new(TestBackend::new(160, 24)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         assert_eq!(hit.nav_entries.len(), 3);
@@ -822,7 +849,7 @@ mod tests {
         app.overview = true;
         app.vendor_box = crate::config::VendorBoxStyle::Navbar;
         let mut terminal = Terminal::new(TestBackend::new(160, 24)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         let tab = &hit.nav_entries[1];
@@ -861,7 +888,7 @@ mod tests {
         app.overview = true;
         app.vendor_box = crate::config::VendorBoxStyle::Navbar;
         let mut terminal = Terminal::new(TestBackend::new(160, 24)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         let tab = &hit.nav_entries[1];
@@ -878,9 +905,9 @@ mod tests {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let app = app_with(vec![TabState::Loading, TabState::Loading]);
+        let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
         let mut terminal = Terminal::new(TestBackend::new(160, 24)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         assert_eq!(
@@ -900,24 +927,16 @@ mod tests {
 
     #[test]
     fn settings_draw_renders_all_key_rows_and_records_hits() {
-        use crate::tui::settings::{Focus as SFocus, KeyInput, SettingsRow, SettingsState};
+        use crate::tui::settings::{Focus as SFocus, SettingsRow};
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
         let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
-        let keys: Vec<KeyInput> = crate::tui::settings::KEY_VENDORS
-            .iter()
-            .map(|_| KeyInput::default())
-            .collect();
-        app.settings = Some(SettingsState {
-            focus: SFocus::Primary,
-            primary_choices: vec![VendorId::Anthropic],
-            primary: VendorId::Anthropic,
-            keys,
-            status: String::new(),
-        });
-        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        app.settings = Some(settings_state());
+        // Tall enough that the whole body (keys + provider switches +
+        // notifications + save) fits inside the 88%-height modal.
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         assert!(
@@ -937,25 +956,15 @@ mod tests {
 
     #[test]
     fn settings_draw_clamps_hit_rects_on_short_terminals() {
-        use crate::tui::settings::{Focus as SFocus, KeyInput, SettingsRow, SettingsState};
+        use crate::tui::settings::{Focus as SFocus, SettingsRow};
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
         let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
-        let keys: Vec<KeyInput> = crate::tui::settings::KEY_VENDORS
-            .iter()
-            .map(|_| KeyInput::default())
-            .collect();
-        app.settings = Some(SettingsState {
-            focus: SFocus::Primary,
-            primary_choices: vec![VendorId::Anthropic],
-            primary: VendorId::Anthropic,
-            keys,
-            status: String::new(),
-        });
+        app.settings = Some(settings_state());
         // 12 rows tall: modal body cannot fit all key vendors and the save row
         let mut terminal = Terminal::new(TestBackend::new(160, 12)).unwrap();
-        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
 
         let hit = app.hit.borrow();
         // Clamped: Save row is clipped and must not be recorded as a clickable hit target

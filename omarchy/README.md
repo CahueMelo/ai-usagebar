@@ -75,6 +75,12 @@ rather than argv or the environment. Leave a field blank to keep its current
 value, or use its clear button to remove an inline key. Saving a new key also
 enables that provider, matching the terminal overlay.
 
+The **Providers** section lists every known provider with an on/off switch
+(the per-vendor `enabled` in config.toml). Turning a provider off removes it
+from the bar, panel and reports; turning one on takes effect on the next
+refresh. The switch only ever names built-in providers, and travels over the
+same stdin patch as everything else.
+
 Not every provider has a credential field, and a missing one is not an omission.
 Claude, Codex, GitHub Copilot, Cursor, Kiro, Antigravity, and Command Code
 authenticate through an existing official or local login, so they never appear
@@ -137,7 +143,8 @@ code — the panel and tooltip remain the place that tells `Claude · work` from
 `Claude · personal`. With both toggles on the bar reads icon + `cld 29%`; with
 `showValue` off it is the icon and `cld`. `showAll` draws every visible
 entry as its own chip with a brand SVG (see [`icons/README.md`](icons/README.md)
-for source and licence). Grok and SuperGrok share a mark; Command Code has
+for source and licence). Grok and SuperGrok share a mark; Grok Bot has its
+own head-and-eyes logomark. Command Code has
 none and falls back to its three-letter code. A `[[custom]]` provider can set
 `brand = "<built-in slug>"` to use one of these marks; without it, the custom
 entry keeps its three-letter tag. A vertical bar has room for none of this and

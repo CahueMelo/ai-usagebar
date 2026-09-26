@@ -85,6 +85,26 @@ assert.match(panelSource, /height:\s*visible\s*\?\s*childrenRect\.height\s*:\s*0
 assert.match(panelSource, /width:\s*implicitWidth/);
 assert.doesNotMatch(panelSource, /orientation:\s*ListView\.Horizontal/);
 assert.match(panelSource, /providerList\.forceLayout\(\)/);
+// The scroll content keeps a hairline of slack on both sides of the
+// Flickable's clip edge. The first provider tab is a bordered button, and at
+// fractional device scales (a 1.25 monitor scale) Qt drops the 1px left
+// border of a control that sits exactly on the clip boundary, so that tab
+// rendered with three borders. (#231)
+assert.match(panelSource, /Column\s*\{[\s\S]*?id:\s*column[\s\S]*?x:\s*Style\.spacing\.hairline/);
+assert.match(panelSource, /width:\s*panelFlick\.width\s*-\s*Style\.spacing\.hairline\s*\*\s*2/);
+// The persisted choice is the source of truth on every entries change: when
+// a refresh gap briefly dropped the chosen entry, syncSelection's fallback
+// re-resolved to the primary and that transient selection stuck after the
+// entry returned. The remembered-entry loop must run BEFORE the
+// current-selection early return so the chosen entry wins once it is back.
+const syncSource = panelSource.slice(
+  panelSource.indexOf('function syncSelection()'),
+  panelSource.indexOf('function restoreRememberedSelection'));
+assert.match(syncSource, /for \(var r = 0; r < visibleEntries\.length; r\+\+\)/, 'remembered-entry loop exists');
+assert.ok(
+  syncSource.indexOf('for (var r = 0') < syncSource.indexOf('for (var i = 0'),
+  'remembered-entry check precedes the current-selection early return'
+);
 assert.match(panelSource, /foreground:\s*root\.entryAlarming\s*\?\s*root\.urgent/);
 assert.doesNotMatch(panelSource, /BrandMark[\s\S]*foreground:\s*root\.alarming\s*\?/m);
 const brandMarkSource = fs.readFileSync(new URL('./BrandMark.qml', import.meta.url), 'utf8');
@@ -92,6 +112,7 @@ assert.match(brandMarkSource, /icons\/" \+ root\.brand/);
 assert.ok(fs.existsSync(new URL('./icons/claude.svg', import.meta.url)));
 assert.ok(fs.existsSync(new URL('./icons/openai.svg', import.meta.url)));
 assert.ok(fs.existsSync(new URL('./icons/grok.svg', import.meta.url)));
+assert.ok(fs.existsSync(new URL('./icons/grokbot.svg', import.meta.url)));
 assert.ok(fs.existsSync(new URL('./icons/copilot.svg', import.meta.url)));
 assert.match(panelSource, /function\s+persistSelection\s*\(/);
 assert.match(panelSource, /Model\.settingsWithOverrides\(root\.settings,\s*root\.moduleName,\s*values\)/);
@@ -127,6 +148,16 @@ assert.match(settingsViewSource, /Log in with Nous Research/);
 assert.match(settingsViewSource, /Log in with GitHub Copilot/);
 assert.match(settingsViewSource, /choose GitHub Copilot as primary and save/);
 assert.match(settingsViewSource, /model:\s*root\.snapshot\.keys/);
+// Provider on/off switches (#244): the section lists the snapshot's vendors
+// and routes every change through the same stdin patch as the keys.
+assert.match(settingsViewSource, /text:\s*"PROVIDERS"/);
+assert.match(settingsViewSource, /model:\s*root\.snapshot\.vendors/);
+assert.match(settingsViewSource, /function\s+collectVendorToggles\s*\(/);
+assert.match(settingsViewSource, /function\s+setVendorOverride\s*\(/);
+assert.match(
+  settingsViewSource,
+  /Model\.buildSettingsPatch\(selectedPrimary,\s*collectChanges\(\),\s*collectVendorToggles\(\)\)/
+);
 assert.match(settingsViewSource, /Paste\s*"\s*\+\s*\(keyCard\.modelData\.secret_label/);
 assert.match(panelSource, /function\s+openNousLogin\s*\(/);
 assert.match(panelSource, /ai-usagebar auth nous login/);
@@ -268,12 +299,14 @@ assert.equal(model.brandIconFile({id: 'anthropic'}), 'claude.svg');
 assert.equal(model.brandIconFile({id: 'anthropic@work'}), 'claude.svg');
 assert.equal(model.brandIconFile({id: 'openai'}), 'openai.svg');
 assert.equal(model.brandIconFile({id: 'supergrok'}), 'grok.svg');
+assert.equal(model.brandIconFile({id: 'grokbot'}), 'grokbot.svg');
 assert.equal(model.brandIconFile({id: 'copilot'}), 'copilot.svg');
 assert.equal(model.brandIconFile({id: 'kimi'}), 'kimi.svg');
 assert.equal(model.brandIconFile({id: 'opencode-go'}), 'opencode.svg');
 assert.equal(model.brandIconFile({id: 'commandcode'}), '');
 assert.equal(model.brandIconFile({id: 'anthropic_api'}), 'anthropic.svg');
 assert.equal(model.brandIconFile({id: 'grok'}), model.brandIconFile({id: 'supergrok'}));
+assert.notEqual(model.brandIconFile({id: 'grokbot'}), model.brandIconFile({id: 'grok'}));
 
 // A custom provider carries no built-in slug, so the mark comes from the
 // `brand` the report relays. A second key for the same service is the same
@@ -289,7 +322,7 @@ assert.equal(model.brandIconFile({id: 'anthropic', brand: 'openai'}), 'openai.sv
 
 const slugs = [
   'anthropic', 'anthropic_api', 'openai', 'copilot', 'zai', 'openrouter',
-  'deepseek', 'kimi', 'kilo', 'novita', 'moonshot', 'grok', 'supergrok',
+  'deepseek', 'kimi', 'kilo', 'novita', 'moonshot', 'grok', 'supergrok', 'grokbot',
   'antigravity', 'cursor', 'minimax', 'kiro', 'nous', 'opencode-go', 'commandcode'
 ];
 const byMark = {};
@@ -403,16 +436,71 @@ assert.deepEqual(JSON.parse(JSON.stringify(model.groupedSections([{type: 'spacer
 assert.equal(model.groupedSections(null).length, 0);
 assert.equal(model.groupedSections('not-sections').length, 0);
 
+// #255: the Claude entry's CLI-session rows arrive the same way — grouped
+// metrics — so the panel draws them under one "Sessions" heading beneath the
+// quota meters, with the health severity the report assigned.
+const claudeSections = model.parseReport(JSON.stringify({entries: [{
+  id: 'anthropic', error: null,
+  sections: [
+    {type: 'metric', label: 'Session (5h)', percent: 29, value: '29%', detail: '',
+     severity: 'low', reset_at: '2026-09-25T14:20:00Z', window_secs: 18000},
+    {type: 'metric', label: 'ship the release', percent: 90, value: '90%',
+     detail: '180,000 / 200,000 tokens · claude-test · last active 12:34:56',
+     severity: 'critical', group: 'Sessions'},
+    {type: 'metric', label: 'sketch ideas', percent: 0, value: 'compacted',
+     detail: 'compacted · waiting for the next response', severity: 'low', group: 'Sessions'},
+    {type: 'text', label: '', value: '… and 4 more sessions'}
+  ]
+}]})).entries[0].sections;
+assert.deepEqual(Array.from(model.groupedSections(claudeSections)).map(row => {
+  if (row.type === 'text' && row.value === '') return 'heading:' + row.label;
+  return row.type + ':' + row.label;
+}), [
+  'metric:Session (5h)',
+  'heading:Sessions',
+  'metric:ship the release',
+  'metric:sketch ideas',
+  'text:'                       // the overflow note is not a heading
+]);
+const sessionRow = model.groupedSections(claudeSections).find(row =>
+  row.type === 'metric' && row.group === 'Sessions');
+assert.equal(sessionRow.severity, 'critical');
+assert.equal(sessionRow.value, '90%');
+
 const balance = model.parseReport(JSON.stringify({entries: [{
   id: 'deepseek', error: null,
   sections: [{type: 'text', label: 'Balance', value: '$8.42'}]
 }]})).entries[0];
 assert.equal(model.headline(balance).text, '$8.42');
-const meteredBalance = model.parseReport(JSON.stringify({entries: [{
+// The metric names its own headline; the label plays no part. A metric that
+// says nothing is a percentage, which is what OpenRouter's "Credit balance" row
+// is — the old label check put its dollar figure on the bar and hid the percent.
+const metered = (headline) => model.parseReport(JSON.stringify({entries: [{
   id: 'openrouter', error: null,
-  sections: [{type: 'metric', label: 'Credit balance', percent: 25, value: '$75.00', detail: ''}]
+  sections: [Object.assign(
+    {type: 'metric', label: 'Credit balance', percent: 25, value: '$75.00', detail: ''},
+    headline === undefined ? {} : {headline: headline})]
 }]})).entries[0];
-assert.equal(model.headline(meteredBalance).text, '$75.00');
+assert.equal(model.headline(metered(undefined)).text, '25%');
+assert.equal(model.headline(metered('percent')).text, '25%');
+assert.equal(model.headline(metered('value')).text, '$75.00');
+// An unrecognized word is not a licence to invent a third rendering.
+assert.equal(model.headline(metered('dollars')).text, '25%');
+// A "value" headline with nothing to show falls back rather than blanking.
+const emptyValue = model.parseReport(JSON.stringify({entries: [{
+  id: 'deepseek', error: null,
+  sections: [{type: 'metric', label: 'Balance', percent: 60, value: '',
+              detail: '', headline: 'value'}]
+}]})).entries[0];
+assert.equal(model.headline(emptyValue).text, '60%');
+// A percent headline on a row whose label says "balance" is drawn as a percent.
+const meteredTank = model.parseReport(JSON.stringify({entries: [{
+  id: 'deepseek', error: null,
+  sections: [{type: 'metric', label: 'Balance', percent: 75, value: '$50.00',
+              detail: '$50.00 of $200.00 left (75% used)', headline: 'percent'}]
+}]})).entries[0];
+assert.equal(model.headline(meteredTank).text, '75%');
+assert.equal(model.headline(meteredTank).percent, 75);
 
 assert.equal(model.parseReport('{').ok, false);
 assert.equal(model.parseReport('{}').ok, false);
@@ -517,6 +605,59 @@ assert.equal(model.buildSettingsPatch('openai', [{id: 'kimi', action: 'set', val
 assert.equal(model.buildSettingsPatch('openai', [{id: 'kimi', action: 'bogus'}]).ok, false);
 assert.equal(model.parseSettingsApplyResult('{"ok":true}'), true);
 assert.equal(model.parseSettingsApplyResult('{"ok":false}'), false);
+
+// Provider on/off switches (#244): the snapshot carries every provider's
+// enabled state, an older binary's vendor-less snapshot still parses, and the
+// patch gains `vendors` only when a toggle is pending.
+const vendorsRaw = JSON.stringify({
+  schema_version: 1, primary: 'anthropic',
+  primary_choices: [{id: 'anthropic', label: 'Claude'}],
+  keys: [],
+  vendors: [
+    {id: 'anthropic', label: 'Claude', enabled: true},
+    {id: 'grok', label: 'Grok', enabled: false},
+    {id: 'opencode-go', label: 'OpenCode Go', enabled: true},
+    {id: '__proto__', label: 'never', enabled: true},
+    {id: 'kimi', label: 'Kimi', enabled: 'yes'}
+  ]
+});
+const vendorSnapshot = model.parseSettingsSnapshot(vendorsRaw);
+assert.equal(vendorSnapshot.ok, true);
+assert.equal(vendorSnapshot.vendors.length, 4);
+assert.equal(vendorSnapshot.vendors[0].id, 'anthropic');
+assert.equal(vendorSnapshot.vendors[0].enabled, true);
+assert.equal(vendorSnapshot.vendors[1].id, 'grok');
+assert.equal(vendorSnapshot.vendors[1].enabled, false);
+assert.equal(vendorSnapshot.vendors[2].label, 'OpenCode Go');
+// A non-boolean enabled is treated as off, never coerced from a string.
+assert.equal(vendorSnapshot.vendors[3].enabled, false);
+const noVendors = model.parseSettingsSnapshot(JSON.stringify({
+  schema_version: 1, primary: 'anthropic',
+  primary_choices: [{id: 'anthropic', label: 'Claude'}], keys: []
+}));
+assert.equal(noVendors.ok, true);
+assert.equal(noVendors.vendors.length, 0);
+
+const togglePatch = model.buildSettingsPatch('', [], [
+  {id: 'grok', enabled: true},
+  {id: 'zai', enabled: false}
+]);
+assert.equal(togglePatch.ok, true);
+assert.deepEqual(JSON.parse(togglePatch.payload), {
+  schema_version: 1, keys: {}, vendors: {grok: true, zai: false}
+});
+// A save with no pending toggle omits `vendors`, so an older binary still
+// accepts a display-only patch (its ApplyRequest denies unknown fields).
+const noTogglePatch = model.buildSettingsPatch('anthropic', []);
+assert.deepEqual(JSON.parse(noTogglePatch.payload), {
+  schema_version: 1, primary: 'anthropic', keys: {}
+});
+assert.equal(model.buildSettingsPatch('', [{id: 'kimi', action: 'clear'}], undefined).ok, true);
+assert.equal(model.buildSettingsPatch('', [], [{id: '__proto__', enabled: true}]).ok, false);
+assert.equal(model.buildSettingsPatch('', [], [{id: 'grok'}, {id: 'grok', enabled: true}]).ok, false);
+assert.equal(model.buildSettingsPatch('', [], [{id: 'grok', enabled: true}, {id: 'grok', enabled: false}]).ok, false);
+assert.equal(model.buildSettingsPatch('', [], [{id: 'grok', enabled: 'on'}]).ok, false);
+assert.equal(model.buildSettingsPatch('', [], []).ok, false);
 
 // Top bar window pinning: auto keeps history, session/weekly/monthly pin one
 // window class, unknown pins fall back to highest instead of blanking.

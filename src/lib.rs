@@ -5,7 +5,7 @@
 //! - the vendor abstraction (`vendor`, `vendors::*`, `usage`)
 //! - bin-specific composition (`widget`, `tui`) which lives next to its binary
 //!
-//! The binaries (`ai-usagebar`, `ai-usagebar-tui`, and on Windows
+//! The binaries (`ai-usagebar`, `ai-usagebar-tui`, and on Windows/macOS
 //! `ai-usagebar-tray`) are thin: they parse CLI args, instantiate vendors,
 //! and hand off to a renderer in this crate.
 
@@ -14,6 +14,7 @@ pub mod active;
 pub mod anthropic;
 pub mod anthropic_api;
 pub mod antigravity;
+pub mod balance;
 pub mod cache;
 pub mod catalog;
 pub mod claude_desktop;
@@ -39,13 +40,16 @@ pub mod kilo;
 pub mod kimi;
 pub mod kiro;
 pub mod minimax;
+pub mod modelstudio;
 pub mod moonshot;
+pub mod notify;
 pub mod nous;
 pub mod novita;
 pub mod ollama;
 pub mod openai;
 pub mod opencode_go;
 pub mod openrouter;
+pub mod orcarouter;
 pub mod outcome;
 pub mod pacing;
 pub mod pango;

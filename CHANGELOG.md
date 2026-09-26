@@ -17,6 +17,531 @@ Each release is also published at
   footer action to refresh, refresh all, open Settings, or quit, click a
   Settings field to focus it, or click **Save** to save.
 
+## [1.25.0] — 2026-09-25
+
+### Added
+
+- **Claude CLI sessions in the report and popover (#255).** When the opt-in
+  `[context]` monitor is enabled, the usage report's Claude entry gains a
+  `"Sessions"` group — up to eight recent Claude Code sessions, one row each,
+  with context health on the same severity colours as quota meters (a 90%
+  context reads as saturated), plus the model, token count and last-active
+  time; compacted or unreadable contexts keep an honest `compacted` /
+  `unknown` value instead of a fabricated percentage. The Windows and macOS
+  popover renders them as grouped rows on the Claude card, the Omarchy panel
+  under a "Sessions" heading, and `usage` prints them in the text report.
+  Sessions are machine-local, so they attach to the first ready Claude entry
+  exactly once, never per account; with `[context]` disabled nothing changes.
+  The reporter's suggested icon beside the options/refresh buttons is a
+  follow-up — the card section is the first slice. The TUI keeps its dedicated
+  `c` overlay.
+- **OpenRouter across multiple workspaces (#221).** The existing
+  `[[openrouter.accounts]]` entries (v1.3.0) are now documented for the
+  reporter's setup — one entry per workspace key, so each workspace gets its
+  own tab, report entry, and cache. The docs state the split's limit honestly:
+  keys created inside one OpenRouter workspace share that workspace's billing
+  account, so entries separate login sessions (workspaces), not keys within a
+  single bill.
+- **Grok Bot on Windows.** `[grokbot]` read the desktop app's session only on
+  Linux and macOS and failed closed elsewhere. On Windows it now reads
+  `%APPDATA%\Grok Bot\sand-secrets.json`, whose tokens are Chromium's Windows
+  `v10` values (AES-256-GCM), with the key from the `Local State` beside it,
+  unprotected by DPAPI for the signed-in user. Both files stay read-only;
+  refreshed tokens still go only to ai-usagebar's own cache. Chromium's newer
+  app-bound `v20` encryption is refused with an error that says so.
+- **The macOS tray updates itself.** Releases now also publish the tray, CLI
+  and TUI for Apple Silicon and Intel Macs, as a tarball and as bare binaries
+  with `.sha256` sidecars. The tray checks once an hour (Settings → Updates:
+  Automatic, Notify me or Off), downloads the binary for its architecture,
+  verifies it, swaps it in place and relaunches — nothing is compiled on the
+  user's machine. The CLI and TUI are replaced only when they already sit
+  beside the tray, so an update never drops a new executable into a `PATH`
+  directory that could shadow a `cargo install` copy.
+- **Options → Check for Updates opens a dialog over the current screen**:
+  Checking, then You're Up to Date, Update Available with Install, or the
+  reason it failed with Try Again. Settings → Check Now opens the same dialog.
+
+- **Popover Style: Classic or Native, on macOS and Windows** (Settings →
+  Appearance → Popover Style). Classic is the app's own card layout, the same
+  everywhere; Native follows the system: v1.23.0's glass dashboard over AppKit
+  glass on macOS, and Windows 11 Fluent over Acrylic on Windows (a solid panel
+  on Windows 10). Both draw the same provider card, so collapsing, the reset
+  popover, the row menu, pace notes, errors and account switching work in
+  either; Native shows one provider at a time behind tabs of logos and
+  percentages. Classic keeps each host's width (320 pt on macOS, 300 on
+  Windows); Native is 390.
+- **The macOS menu bar can show logos** (Settings → Menu Bar → Menu Bar
+  Shows: Chart or Logos): each provider's logo followed by the values of the
+  metrics starred in it, two starred metrics stacked. Both looks show exactly
+  the starred metrics.
+- **The usage goal works in both styles**; in v1.23.0 only the glass
+  dashboard drew it.
+- **Text cut short shows the full value on hover**, and picker values are
+  capped so a long one no longer pushes its label out.
+- **Per-provider on/off switches in the settings surfaces (#244).** The
+  terminal Settings overlay grew a Providers section — one on/off row per
+  known vendor — and the Omarchy settings form a Providers section of
+  toggles, both writing `enabled = true/false` under the vendor's own
+  config.toml section through the same comment-preserving save path. Only
+  toggled providers are written, so an untouched save adds no section; an
+  explicit off in the same save wins over the enable-a-pasted-key rule; and
+  the switch names built-in vendors only (the slug is validated against the
+  vendor list before anything is written, on both the TUI and the native
+  stdin patch). Defaults are unchanged — this is only the switch. The
+  overlay's body now scrolls to follow focus, keeping Save reachable with
+  every provider listed.
+
+### Changed
+
+- **Grouped rows on the Windows/macOS popover and menu bar now carry their
+  group in the row key.** A metric that names its group in the report
+  (SuperGrok's "Breakdown" slices, the new "Sessions" rows) used to be keyed
+  without it, so the popover and the menu-bar strip could disagree with the
+  Omarchy panel's rendering. Both now label and key such rows exactly as a
+  positional heading would; a SuperGrok slice starred in an older build needs
+  re-starring once.
+- **The Grok Bot card names the subscription that bills it** — "Cursor
+  Ultra" — instead of the app's own "Grok Bot Plan", which reads the same on
+  every account (the popover trimmed it to a bare "Plan"). It comes from the
+  usage response's `billingBrand` and the plan it reports; a brand not seen
+  yet shows the old label rather than a guess. `{gbt_plan}` is unchanged.
+- **The About screen says what AI Usage is** and links the source code,
+  release notes, issue tracker and license. It no longer repeats the version
+  from the footer or hosts the update check.
+- **An update the tray cannot install offers its release page.** A release
+  without a build for this OS and architecture, an install directory the tray
+  cannot write (a root-owned `/usr/local/bin`), or a copy another tool owns —
+  Homebrew, Nix, a link into place, cargo's `target/` directory — shows View
+  Release instead of an Install button that could only fail or would fight the
+  tool that installed it.
+- **A meter too early in its window for a pace estimate says "Estimating…"**
+  (with Always Show Pacing on), and explains on hover when the pace appears.
+  The estimate now waits 1% of the window but never more than an hour, so a
+  weekly or monthly meter no longer sits blank for 1h 41m or 7h 12m.
+
+- **The macOS popover opens in Classic again**, the layout it had before
+  v1.23.0; the glass dashboard is one choice away as the Native style. A new
+  look now ships as a style instead of replacing the one people use
+  (`CONTRIBUTING.md` → Changing the tray popover UI).
+- **The macOS menu bar shows the chart by default again**, and the text
+  summary's options are gone: provider names, Show All Providers, Hide Usage
+  Value, Usage Window, Focused Provider and the middle-click provider
+  cycling. The stars already choose which providers and which quota windows
+  appear, so these either repeated that choice or overrode it. Their old
+  `config.toml` keys are ignored, not rejected.
+- **Every popover screen is translated**, the update dialog, error hints and
+  update messages included, and the language list reads English and
+  Português. Strings are Paraglide JS messages now, so a missing translation
+  fails the build instead of falling back to English.
+- **Native lets the system material show**: thin surfaces with one margin on
+  every edge. On macOS it follows the macOS 26 UI kit: 24 pt controls with a
+  6 pt radius, tabs as a segmented control, the small switch with its capsule
+  knob, menus with an accent-filled highlight, group boxes for cards and
+  square tooltips. On Windows it follows Fluent: 4 px controls with their
+  hairline border, 8 px cards, WinUI toggles and Fluent 2 tabs. Settings uses
+  tabs only in Native.
+
+### Fixed
+
+- **Command Code no longer appears without a login on fresh configurations.**
+  It was enabled by default, so the bar showed a red credentials error even for
+  people who never used it. It now starts off and can be enabled explicitly or
+  by local credential detection. Existing explicit `[commandcode] enabled = true`
+  settings remain respected; switch that setting off to hide it.
+- **The Windows tray popover keeps its layout when the exe moves.** WebView2
+  kept the popover's profile next to the exe (`<exe dir>\ai-usagebar-tray.exe.WebView2`),
+  so running the tray from another folder, or a Scoop update into a new
+  version folder, started from an empty profile and lost the Customize
+  layout, theme, style and dismissed hints; under Program Files the folder is
+  not writable at all. The profile now lives in
+  `%LOCALAPPDATA%\ai-usagebar\popover`, beside `detect.json`. The first run
+  copies the `Local Storage` of the profile beside the exe (the layout, a few
+  KB) into it and leaves the old folder alone. If the folder cannot be created the popover
+  falls back to the old location and still opens.
+- **Antigravity says what a free plan means.** Accounts whose plan does not
+  include Antigravity get 403 `SUBSCRIPTION_REQUIRED` from the cloud quota
+  fallback; the widget called that a rejected session, sending the user to
+  re-sign-in for nothing. The message now says the plan has no quota to
+  report and names the `[antigravity]` toggle, and only a 403 without that
+  reason keeps the session wording. (#256)
+- **A Scoop install of the Windows tray no longer updates itself behind
+  Scoop's back.** The built-in updater only knew Homebrew, Nix and cargo
+  builds, so under Scoop "Install Update" (or Automatic, silently) wrote the
+  new exes into Scoop's version folder: `scoop list` kept the old version, the
+  next `scoop update` fetched the running version again and `scoop reset`
+  handed back the new one. A tray running from
+  `<scoop>\apps\<app>\<version or current>\`, with Scoop's `install.json`
+  beside it, now offers the release page like a Homebrew install does, and
+  Scoop owns the update (`scoop update ai-usagebar`), as the README already
+  said.
+- **The Windows tray popover no longer runs under the taskbar.** A tall popover
+  was sized and kept on screen against the whole monitor, so on a 1440 px
+  display with a 48 px taskbar its bottom went behind it. It now uses the
+  monitor's work area and counts the window frame, and it opens just clear of
+  the taskbar, leaving room for its shadow. A click on the tray icon opens it
+  centered on the icon on the side away from the taskbar, so a taskbar docked
+  at the top, left or right works the same; it used to hang a margin above the
+  icon, twice as far from a bottom taskbar as the global shortcut put it.
+- **A Codex credit balance sent as a numeric string reads as dollars.** The
+  usage endpoint sometimes sends the balance as a bare string (`"0"` on a Pro
+  account with no extra-usage credits) instead of a number, and only numbers
+  were formatted, so the Credits block, the Waybar tooltip,
+  `{oai_credit_balance}`, `usage --json` and the tray popover showed
+  "balance: 0". A string that is only a finite number is now formatted like a
+  number (`$0.00`, a negative as `-$1.00`); anything else, such as an already
+  formatted `$2.50`, passes through unchanged.
+- **A click outside the Windows tray popover closes it right after opening.**
+  The popover took focus 400 ms after the tray click and ignored blurs for 400
+  ms more, so a click elsewhere in that time left it open until it was clicked
+  into and out of again. It is focused at once now, and a press outside it
+  closes it whether or not Windows handed it focus. A click on the tray icon
+  while the popover is open closes it; the press used to close it and the
+  release reopened it.
+- **The Windows tray icon is white on a dark taskbar.** It was always drawn in
+  black, which almost disappears on the Windows 11 default. It follows the
+  "default Windows mode" setting the taskbar uses, and recolors when it changes.
+- **A manual update check could fail once with "error sending request".** The
+  tray kept an idle connection that GitHub had already closed; checks now open
+  a fresh one each time.
+- **Enter in the update dialog presses its default button** (Install, Try Again
+  or OK), and closing a menu or popover with the mouse no longer leaves a focus
+  ring on the button that opened it.
+- **A starred SuperGrok meter was missing from the menu-bar bars.** The meter
+  was renamed "Weekly usage" and the popover learned to drop the suffix, but
+  the tray host still only dropped "Build credits", so the star it looked up
+  never matched and that bar was skipped. Both sides now derive star keys from
+  one shared fixture that their tests read, so a rule changed on one side alone
+  fails a test.
+- **The armed Reset button in the tray popover turns red.** The first click of
+  Reset asks for a second; the red it was meant to show never applied, because
+  the button's own style outranked it, so only its tooltip changed.
+- **Install Update did nothing on macOS.** The banner sent a command the macOS
+  host never handled, so the button read "Updating…" and nothing happened.
+- **A failed update check no longer poses as an available update.** The footer
+  dot and the dashboard banner need a release in hand; the dialog reports a
+  failed check.
+- **Tray popover reset details open the way each one is used.** Hovering a
+  meter's "Resets in …" shows the other format (the exact time, or the
+  countdown in exact mode) in the same hint style as Settings; the banked
+  "Rate Limit Resets" list now opens on click, on the Options menu's surface.
+  The two had it the other way round and neither followed the popover's own
+  radius and padding. Banked resets are colored by how soon each expires
+  instead of by position.
+- **Menus and pickers in the tray popover highlight the hovered row in dark
+  mode.** The highlight was the card gray, a shade away from the dark menu
+  background, so it was nearly invisible. Menus, pickers and popover lists now
+  share one hover color per theme.
+- **The update banner matches the other dashboard notices** (padding, icon,
+  button), instead of a near-copy with its own spacing.
+- **Everything clickable in the tray popover shows a hover highlight** — metric
+  readings, row chevrons, dismiss buttons, list rows — the same one the menus
+  use; things that only show a hint on hover get none. Every hover hint is the
+  popover's own tooltip now, never the system's `title` bubble: it appears after
+  half a second, dark gray on the light theme and a step above the cards on the
+  dark one, with no arrow. The footer's "Next update in" countdown is plain
+  text now; Refresh lives in Options and on each provider. Dashboard notices put the
+  icon beside the title, with the message and button on the card's left edge.
+- **Buttons, chips and pickers share one height and label size**, the Options
+  button included; the banked-resets count is a chip like Status and
+  Dashboard.
+- **No pace tick on a spent meter.** A tray popover row at 100% reads "Limit
+  reached", yet it still got a behind verdict, so the even-pace tick sat on
+  the full bar as if there were room left, and Always Show Pacing counted it
+  as visible. A spent row now has no pace at all, as in OpenUsage; a row one
+  percent short of the limit keeps its tick.
+- **The macOS tray offers Quit when the popover's webview cannot be built
+  (#249).** A WKWebView that fails to build left the accessory app (no Dock
+  icon, no app menu) with no menu and no way out but `killall`: clicking the
+  status item flashed an empty window. The status item now attaches a
+  minimal fallback menu — Refresh and Quit AI Usage — only on that failure
+  path, with Quit exiting through the same clean loop shutdown the popover's
+  own Quit control uses. Normal operation is unchanged: the status item stays
+  menu-free so both mouse buttons open the popover.
+
+
+## [1.24.0] — 2026-09-24
+
+### Added
+
+- **Claude's banked limit resets.** Claude now grants redeemable usage-limit
+  resets during a campaign — the "Resets" offer with its own expiry date —
+  and they land on the same row Codex and SuperGrok resets already use: the
+  tooltip, the TUI panel, `usage --json`'s `reset_credits`, and from there the
+  Omarchy, GNOME and KDE surfaces, plus the 48-hour expiry notification. Two
+  new placeholders, `{resets_available}` and `{resets}`. The figures come from
+  the `cedar_ember` block on the existing usage endpoint, so there is no
+  second request; an account without a grant is the normal case and shows no
+  row at all. The redemption handle the API returns alongside each grant is
+  never deserialized — ai-usagebar reports that a reset exists and when it
+  lapses, and redeeming it stays with Claude Code (`/limit-reset`).
+
+### Changed
+
+- **macOS usage panel layout.** Current usage and goal percentages sit to the
+  right of their bars, with the pace projection following the reset note below
+  both bars. Provider buttons switch the main view without a nested card.
+
+### Fixed
+
+- **A named Codex account no longer caches another account's usage.** A
+  fetch chose its `auth.json` before taking the credentials lock, so an
+  `account switch --codex` landing in between made it read the other login
+  and store that usage under its own label. The route is now resolved again
+  once the lock is held, and followed if the switch moved the login.
+- **The unnamed Codex tab shows the new login right after a switch.** A
+  successful `account switch --codex` now drops the default account's usage
+  cache, which otherwise kept showing the previous account's quota until it
+  expired. Named accounts keep their own caches.
+- **The unnamed Claude tab shows the new login right after a switch.** The
+  Claude CLI switch had the same stale default cache as the Codex one, and now
+  drops it the same way after a successful `account switch`.
+- **Account labels, paths and errors printed by `account` are sanitized.**
+  The Codex status line, the switch output and the `add` / `--adopt-current`
+  messages for both vendors now pass through the untrusted-text sanitizers,
+  so a label carrying bidi controls cannot reorder terminal output.
+- **The macOS tray switches accounts without a separate `ai-usagebar`
+  binary.** The documented build produces only `ai-usagebar-tray`, and the
+  switch looked for `ai-usagebar` beside it or in `~/.cargo/bin`, so it
+  failed there or could run a different version. The tray now runs the
+  switch itself.
+- **Every rendered account card keeps its switch control.** The popover
+  offered switch controls to only the first 32 accounts while rendering up to
+  64 cards, and a label longer than a card id's cut matched no card.
+
+## [1.23.0] — 2026-09-24
+
+### Fixed
+
+- **macOS Claude Code Keychain prompts, the oversized case (#148).** Releases
+  1.16.0 through 1.21.1 still wrote a refreshed credential through the native
+  Security.framework API whenever the composed `security -i` line exceeded
+  the 4000-byte operational cap. That case is now the normal one: Claude Code
+  keeps `mcpOAuth` discovery state for every MCP plugin in the same item, so a
+  real blob (3640 bytes, 302 quotes, ~4020 bytes composed, measured
+  2026-09-23) took the native path at every token refresh, re-stamped the
+  item with ai-usagebar's `cdhash:` partition, and brought the dialog back
+  daily — "Always Allow" with the Keychain password does restore `apple-tool:`,
+  but only until the next refresh. Oversized blobs are now handed to
+  `security add-generic-password` as an argument instead, the same fallback
+  Claude Code uses (the JSON is visible to `ps` for the milliseconds `security`
+  runs); the native write is gone and `security-framework` is a dev-dependency
+  used only by the opt-in Keychain tests, which now also cover an oversized
+  blob through the production dispatch.
+- **The macOS tray opens its popover on left click again (#236).** On macOS
+  27 a left click on the status item opened the Refresh / Quit context menu
+  instead of the dashboard. tray-icon 0.24 keeps the menu attached to the
+  `NSStatusItem`, and on macOS 27 an attached menu keeps left clicks from
+  reaching tray-icon's click handler, so `with_menu_on_left_click(false)` had
+  no effect (tauri-apps/tray-icon#355). tray-icon 0.25.1 attaches the menu
+  only while it is being shown. The MSRV is now Rust 1.90, which tray-icon
+  0.25 and muda 0.20 require.
+- **The Omarchy panel keeps the provider you chose.** A refresh gap (fetch
+  error, sleep/wake stale list) briefly dropped entries, and the panel's
+  fallback re-resolved to the configured primary; when the chosen entry
+  returned, that transient selection stuck and the panel showed the primary
+  until a shell restart. The persisted choice is now the source of truth:
+  once the chosen entry is back in the list, it wins over any selection that
+  only exists because of the gap.
+
+### Added
+
+- **Optional macOS usage goal.** Preferences can show an extra bar below each
+  usage metric with the percentage expected now for an even path to 100% at
+  the reset. The calculation uses the reported window length and reset time;
+  monthly windows without an exact start are clearly marked as estimates.
+
+- **Omarchy-style macOS menu-bar summary.** The tray shows every ready
+  provider's name and quota headline beside its chart glyph by default.
+  Middle-click or the right-click menu cycles providers; the menu can show one,
+  hide values, or pin the 5-hour, weekly, or monthly window. Selection and
+  display options persist in `[tray]`; Chart Icon Only restores the previous
+  glyph-only presentation.
+
+- **macOS usage panel and preferences.** An AppKit glass popover shows only
+  enabled providers, their usage and balance, reset times, and refresh controls.
+  Settings has General, Providers, Menu, Preferences, and Alerts tabs. The
+  provider list can be reordered and customized there; English and Brazilian
+  Portuguese are selectable in Preferences. Alerts deliver quota and expiring
+  credit notifications through macOS Notification Center, with an enable switch
+  and threshold in the panel. Exact reset times now follow the selected display
+  mode in the macOS panel.
+- **Switch the active Claude or Codex account from the macOS tray.** Each
+  named account's card gets a control beside Customize and Reset: a filled star
+  on the login in use, an outline star on the others that switches to it. A
+  Claude switch moves the `claude` CLI login (which the VS Code extension
+  shares) and, when the account has a Desktop profile, Claude Desktop; a Codex
+  switch moves `~/.codex/auth.json`, which the Codex CLI, desktop app and IDE
+  extension all read. The star spins while the switch runs and turns red with
+  the reason when it fails.
+- **`ai-usagebar account switch <label> --codex`.** The Codex counterpart of the
+  Claude CLI switch: the outgoing login is saved back to its own account
+  before the target's `auth.json` is moved into `~/.codex/auth.json`, so the
+  switch itself never leaves one refresh token in two files. It refuses
+  ambiguous layouts (shared or symlinked credential files, one ChatGPT account
+  under two labels, an active account with its own copy), locks every
+  directory it touches, and on failure restores what it can and names what it
+  could not. A per-file marker (account id only, no token) keeps a moved-away
+  account identifiable, and reads for the active account follow it into the
+  default file. ai-usagebar's Codex token refresh now takes the same lock.
+- **`ai-usagebar account add <label> --codex`** registers an
+  `[[openai.accounts]]` entry at `~/.codex-<label>/auth.json` and runs
+  `codex login` under that `CODEX_HOME`.
+- **`--adopt-current`** on `account add` registers the login already in use
+  (plain `claude`, or `~/.codex` with `--codex`) under a label without signing
+  in again, so the first switch away can save it.
+- **`[openai] show_default_account`**, like the Anthropic and OpenRouter
+  settings: `false` hides the unnamed Codex tab once every login is named.
+- `account status` lists the Codex accounts and which one `~/.codex` holds.
+
+- **Quota-threshold desktop notifications.** After a fresh fetch, any vendor
+  window that crosses `[notifications] threshold` (default 97%) raises a
+  `notify-send` notification on Linux (`-a ai-usagebar -c quota`); an
+  exhausted window (100%) is marked critical. Banked reset credits (Codex,
+  SuperGrok) notify 48 hours before they expire. One crossing is one
+  notification: a key re-arms only when usage drops 7 points below the
+  threshold or the window's reset moves to a later instant, and the dedupe
+  state lives in `~/.cache/ai-usagebar/notifications.json` behind the same
+  flock discipline as the vendor caches. Delivery is best-effort by design —
+  a missing or failing notifier, an unwritable state file, or lock contention
+  is a silent skip that never touches the bar, the report, or an exit code.
+  macOS delivers through Notification Center; Windows delivery follows in a
+  later release. Config: `[notifications]` with `enabled` (default `true`) and
+  `threshold` (1..=100, default `97`), also editable in the TUI Settings
+  overlay.
+
+## [1.22.0] — 2026-09-23
+
+### Added
+
+- **A tank for a prepaid balance.** DeepSeek, Kilo, Novita, Moonshot and
+  prepaid Grok report money remaining and no denominator, so their row was a
+  plain balance. `[vendor] display_limit` states the tank size, in the currency
+  that vendor already reports, and turns it into a consumed meter —
+  `(display_limit - balance) / display_limit`, clamped 0–100, so a balance over
+  the cap reads 0% used. It must be finite and greater than zero, there is no
+  default, and it is a fallback rather than an override: a vendor that states
+  its own limit keeps it, which is why `[openrouter]` has none.
+- **`[vendor] headline`.** Picks which number goes on the bar, `"amount"` or
+  `"percent"`; whichever is not the headline stays in the detail line. Balance
+  vendors default to `"amount"`, OpenRouter to `"percent"`. Setting
+  `display_limit` does not switch it, and `"percent"` with no limit from either
+  source leaves the amount on the bar. Report metrics carry the resolved choice
+  as a new `headline` field (`"percent"` or `"value"`).
+- **Alibaba Cloud Model Studio Token Plan** as an opt-in local-login vendor
+  (`[modelstudio]`). Reads the console session the official `bl` CLI stores
+  at `~/.bailian/config.json` after `bl auth login --console` (read-only;
+  `config_dir`/`BAILIAN_CONFIG_DIR` override the location), and reports the
+  plan's 5-hour and weekly windows through the same region×site console
+  gateway the CLI uses. Wire percentages are ratios in [0,1] and resets are
+  epoch milliseconds; an absent window is no-data (possibly unlimited), never
+  0%, and an out-of-range value is schema drift rather than a figure. The
+  vendor cache is scoped by a fingerprint of the access token — the token
+  itself never persists. (#147)
+
+- **OrcaRouter** as an opt-in API-key vendor (`[orcarouter]`,
+  `ORCAROUTER_API_KEY`). Reports the credit card from the one-api compatible
+  dashboard billing endpoints — cumulative spend (US cents on the wire,
+  rendered as exact dollars), total credit limit, remaining, and the key's
+  expiry when it has one. Unlimited-quota keys report the `100000000` sentinel
+  in the limit fields and render spend-only, never as a $100M wallet. Errors
+  that arrive as HTTP 200 with an OpenAI error envelope surface as failures,
+  not zeros. (#193)
+
+### Changed
+
+- **The Omarchy panel and KDE plasmoid read a metric's `headline` instead of
+  testing its label for "balance".** The label check put OpenRouter's dollar
+  figure on the bar and hid its real consumed percent; OpenRouter now shows the
+  percent by default.
+- **The tray popover honours `headline` too** (Windows and macOS). A balance
+  metered against `display_limit` with `headline = "amount"` shows the money
+  figure under its meter, with the percentage and the detail line in the hover
+  text; `"percent"` keeps the popover's used/left toggle.
+
+### Fixed
+
+- **Omarchy Quattro panel: the first provider tab keeps its left border at
+  fractional display scales.** The panel's scroll content sat flush against
+  the `Flickable`'s clip edge, so at a 125% monitor scale Qt snapped the
+  first tab's 1px border to a device pixel outside the clip and only that
+  strip was dropped — the tab rendered with three borders while every other
+  tab kept all four. The content now keeps a hairline of slack on both sides,
+  so no bordered control sits exactly on the clip boundary. (#231)
+
+## [1.21.1] — 2026-09-22
+
+### Fixed
+
+- **The Windows tray again embeds the real dashboard** instead of the
+  placeholder page. v1.21.0 shipped a stub popover: `build.rs`'s npm
+  availability probe called `npm` directly, which cannot spawn the Windows
+  `.cmd` shim, so the Vite build was silently skipped and the no-Node
+  placeholder was baked into the release binary. The probe now goes through
+  the same `cmd /C` wrapper the build itself uses, and CI plus the release
+  workflow fail loudly if any tray artifact ever embeds the placeholder
+  text again. (#229)
+
+## [1.21.0] — 2026-09-22
+
+### Added
+
+- **macOS WebView tray** (`ai-usagebar-tray`). Same OpenUsage-style popover as
+  Windows (WKWebView instead of WebView2), plus a compact usage-chart glyph in
+  the menu bar from starred metrics (at most two per provider).
+  `cargo build --release --bin ai-usagebar-tray`.
+- **macOS Grok Bot.** `[grokbot]` reads
+  `~/Library/Application Support/Grok Bot/sand-secrets.json` with the
+  Chromium OSCrypt key from the login Keychain item `Grok Bot Safe Storage`
+  / `Grok Bot Key` (1003 PBKDF2 rounds, the same scheme as Claude Desktop).
+  The Mac app stores `cursor-accounts` as a JSON string wrapping the object
+  Linux writes directly; both shapes parse. Windows still fails closed.
+  Omarchy and the Windows tray draw Grok Bot's own head-and-eyes logomark
+  (`grokbot.svg`) instead of sharing Grok's mark.
+- **About and Check for Updates** in the tray Options menu. macOS checks
+  GitHub and opens the release page; Windows still installs in place.
+  Settings rows that are not obvious (pacing, reset times, shortcut, and
+  the rest) show a short hint.
+
+### Fixed
+
+- **`usage --json`'s `primary` is now an entry id, not a bare vendor slug.**
+  With named accounts the entry ids carry account labels
+  (`anthropic@claude-me`), so a `primary` serialized straight from
+  `config.ui.primary` named an id no entry carried and every consumer
+  resolved the mismatch differently or not at all. The report resolves the
+  configured primary to the first entry of that vendor (the bare slug, or
+  the first `{slug}@…` account) before serializing; a primary naming a
+  vendor with no entries keeps the slug, and an unset primary stays absent.
+  Consumers can now treat `primary` as an entry id present in `entries`.
+
+- **A named Anthropic account keeps reading its own credential file** while
+  that file is there. `resolve_active_label` matches `~/.claude.json`'s
+  account marker, and two `CLAUDE_CONFIG_DIR` directories can hold the *same*
+  account — each with its own live login. Every fetch for such a label was
+  routed to `~/.claude/.credentials.json` on the assumption that
+  `account switch` had moved the credential into that default slot, so an
+  account whose own file was live and unread next to it reported "token
+  refresh failed; run `claude` to re-auth" from a slot the user never logs
+  into. The default slot is now used only when the account's own file really
+  is gone, which is what a switch leaves behind.
+
+- On macOS, a leftover `~/.claude/.credentials.json` no longer shadows Claude
+  Code's live Keychain item. That file-first read 400'd "Refresh token expired"
+  and the tray showed **Sign-in expired** while `claude` itself was still
+  logged in.
+
+- **Grok Bot live `usagePercent` and on-demand `enabled`.**
+  `GetSandUsageStatus` has been observed sending a fractional JSON number
+  (`19.150778`) and `onDemandSettings.enabled: null`. The parser rounds the
+  percent and treats null as off, so a real macOS session no longer dies as
+  schema drift.
+- **Stop probing sibling ports of a `missing CSRF` `agy`.** When the local
+  language server status RPC responds with missing CSRF, the remaining
+  listeners of that same process (such as the companion TLS port) are skipped
+  instead of probed. This eliminates the spurious `http: TLS handshake error:
+  remote error: tls: unrecognized name` diagnostics while still trying other
+  Antigravity products that are running.
+
 ## [1.20.2] — 2026-09-19
 
 ### Fixed
@@ -2575,7 +3100,13 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.20.2...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...HEAD
+[1.25.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.24.0...v1.25.0
+[1.24.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.23.0...v1.24.0
+[1.23.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.22.0...v1.23.0
+[1.22.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.21.1...v1.22.0
+[1.21.1]: https://github.com/akitaonrails/ai-usagebar/compare/v1.21.0...v1.21.1
+[1.21.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.20.2...v1.21.0
 [1.20.2]: https://github.com/akitaonrails/ai-usagebar/compare/v1.20.1...v1.20.2
 [1.20.1]: https://github.com/akitaonrails/ai-usagebar/compare/v1.19.0...v1.20.1
 [1.19.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.18.1...v1.19.0

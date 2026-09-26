@@ -93,6 +93,10 @@ pub struct AnthropicSnapshot {
     pub scoped: Vec<ScopedWindow>,
     /// `None` when `extra_usage.is_enabled` is false or the block is absent.
     pub extra: Option<ExtraUsage>,
+    /// Banked limit resets from the `cedar_ember` block — the same idea as
+    /// Codex's rate-limit reset credits and SuperGrok's remaining resets.
+    /// Empty when the account has no grant or the endpoint withheld the block.
+    pub reset_credits: ResetCredits,
 }
 
 /// A usage window scoped to a specific model, labeled by the API
@@ -404,10 +408,32 @@ pub enum VendorSnapshot {
     OpenCodeGo(crate::opencode_go::types::Usage),
     CommandCode(crate::commandcode::types::Snapshot),
     Ollama(OllamaSnapshot),
+    OrcaRouter(OrcaRouterSnapshot),
+    ModelStudio(ModelStudioSnapshot),
     /// A `[[custom]]` provider. Which one is not in the snapshot: the caller
     /// that fetched it holds the `CustomProviderConfig`, and the cache
     /// directory is keyed by its `id`.
     Custom(crate::custom::types::CustomSnapshot),
+}
+
+impl VendorSnapshot {
+    /// Banked, user-redeemable resets, for the vendors that have them.
+    ///
+    /// The one place this table lives. It had already been written twice —
+    /// once for the report's `reset_credits` field and once for the
+    /// expiry notifications — and adding a third provider to only one of them
+    /// is a silent half-feature: the sidebar lists a grant the notifier never
+    /// warns about. `None` is the honest answer for every other vendor; it is
+    /// not the same as an empty [`ResetCredits`], which means "this provider
+    /// banks resets and you currently hold none".
+    pub fn reset_credits(&self) -> Option<&ResetCredits> {
+        match self {
+            Self::Anthropic(snapshot) => Some(&snapshot.reset_credits),
+            Self::Openai(snapshot) => Some(&snapshot.reset_credits),
+            Self::SuperGrok(snapshot) => Some(&snapshot.reset_credits),
+            _ => None,
+        }
+    }
 }
 
 /// Google Antigravity 2.0 / CLI snapshot. The API groups models into Gemini
@@ -630,6 +656,10 @@ impl SuperGrokPeriod {
 pub struct GrokbotSnapshot {
     /// `grokPlanLabel`, falling back to `cursorPlanName`, then "Grok Bot".
     pub plan: String,
+    /// The subscription that bills the pool, from `billingBrand` and the plan
+    /// reported for it ("Cursor Ultra"). `None` for a brand not recognized yet,
+    /// which is left unnamed rather than guessed.
+    pub billed_by: Option<String>,
     /// `hasNonZeroIncludedLimit`. When false the account carries no included
     /// allowance at all — a distinct "no included allowance" state, never a
     /// fabricated 0% meter.
@@ -652,6 +682,13 @@ pub struct GrokbotSnapshot {
 }
 
 impl GrokbotSnapshot {
+    /// The plan a frontend shows: the subscription that bills the pool
+    /// ("Cursor Ultra") over the app's own label, which reads "Grok Bot Plan"
+    /// on every account.
+    pub fn display_plan(&self) -> &str {
+        self.billed_by.as_deref().unwrap_or(&self.plan)
+    }
+
     /// At 100% of the included pool, `hasAvailableUsage` can still be true
     /// because on-demand keeps serving — say so, but only when the account
     /// actually has on-demand switched on.
@@ -738,6 +775,23 @@ pub struct ResetCredit {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// A provider's own label for a banked reset, rendered verbatim in Pango bar
+/// markup and in the `;;`-delimited desktop FORMAT protocol. Both vendors that
+/// carry one gate it here rather than each keeping a copy: an over-long or
+/// control-character-bearing title is dropped, leaving the expiry line alone,
+/// which still says everything the user has to act on.
+pub fn checked_reset_title(value: Option<String>) -> Option<String> {
+    const MAX_RESET_TITLE_CHARS: usize = 80;
+    let value = value
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    if value.chars().count() > MAX_RESET_TITLE_CHARS || value.chars().any(char::is_control) {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 impl ResetCredits {
@@ -859,10 +913,69 @@ impl OpenRouterSnapshot {
         if self.total_credits <= 0.0 {
             return 0;
         }
-        ((self.total_usage / self.total_credits) * 100.0)
-            .round()
-            .clamp(0.0, 100.0) as i32
+        i32::from(crate::format::clamp_pct(
+            (self.total_usage / self.total_credits) * 100.0,
+        ))
     }
+}
+
+/// OrcaRouter — prepaid credit card from the one-api compatible dashboard
+/// billing endpoints (`/v1/dashboard/billing/usage` + `/subscription`), over an
+/// API key. Usage arrives in **US cents** (`total_usage: 275` = $2.75); the
+/// subscription's limit fields are USD and mean the *total* credit limit
+/// (remaining + used), with `100000000` as the unlimited sentinel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrcaRouterSnapshot {
+    /// Cumulative spend, exact US cents (`total_usage`).
+    pub spent_cents: i64,
+    /// Total credit limit in exact US cents. `None` for unlimited keys (the
+    /// `100000000` sentinel) or when the subscription response carried no
+    /// limit field at all — either way the card is spend-only.
+    pub limit_cents: Option<i64>,
+    /// Key expiry (`access_until`, Unix seconds); `None` = no expiry (a wire
+    /// `0` means the same thing).
+    pub access_until: Option<DateTime<Utc>>,
+}
+
+impl OrcaRouterSnapshot {
+    pub fn spent_usd(&self) -> f64 {
+        self.spent_cents as f64 / 100.0
+    }
+
+    pub fn limit_usd(&self) -> Option<f64> {
+        self.limit_cents.map(|c| c as f64 / 100.0)
+    }
+
+    /// Remaining credit in exact cents. Can be negative (spend past the
+    /// limit) — the sign belongs outside the symbol, like OpenRouter debt.
+    pub fn remaining_cents(&self) -> Option<i64> {
+        self.limit_cents.map(|limit| limit - self.spent_cents)
+    }
+
+    pub fn remaining_usd(&self) -> Option<f64> {
+        self.remaining_cents().map(|c| c as f64 / 100.0)
+    }
+
+    /// Integer-percentage of the limit consumed, computed in cents so no
+    /// float division is involved. `None` when there is no limit — an
+    /// unlimited key has no percentage to be exact *about*.
+    pub fn consumed_pct(&self) -> Option<i32> {
+        self.limit_cents.filter(|l| *l > 0).map(|limit| {
+            let pct = (self.spent_cents.saturating_mul(100)) / limit;
+            pct.clamp(0, 100) as i32
+        })
+    }
+}
+
+/// Alibaba Cloud Model Studio Token Plan — a 5-hour and a weekly ratio
+/// window, either of which the console account may not report. An absent
+/// window is no-data (possibly unlimited), never 0%.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelStudioSnapshot {
+    /// 5-hour window. `None` when `per5HourPercentage` was absent.
+    pub session: Option<UsageWindow>,
+    /// Weekly window. `None` when `per1WeekPercentage` was absent.
+    pub weekly: Option<UsageWindow>,
 }
 
 /// Worst-of severity class for the Waybar bar text color. Mirrors
@@ -926,6 +1039,7 @@ mod tests {
                 currency: None,
                 decimal_places: Some(2),
             }),
+            reset_credits: Default::default(),
         }
     }
 
