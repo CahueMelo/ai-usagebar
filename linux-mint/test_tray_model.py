@@ -51,6 +51,13 @@ class TrayModelTest(unittest.TestCase):
         self.assertEqual(meter_color(metric(19), near), "yellow")
         self.assertEqual(meter_color(metric(30), behind), "red")
 
+    def test_zero_spare_projects_behind_not_near(self):
+        # The popover paints red once the projected cushion is gone
+        # (model.js meterColor: onTrack with sparePercent < 1 is red).
+        pace = metric_pace(metric(20), NOW, "en_US")
+        self.assertEqual(pace, ("behind", "~0% spare"))
+        self.assertEqual(meter_color(metric(20), pace), "red")
+
     def test_weekly_warmup_is_capped_at_one_hour(self):
         self.assertIsNone(metric_pace(metric(1, 604_800, 3_599), NOW))
         self.assertIsNotNone(metric_pace(metric(1, 604_800, 3_600), NOW))

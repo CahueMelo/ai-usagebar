@@ -221,9 +221,15 @@ scoop bucket add akitaonrails https://github.com/akitaonrails/scoop-bucket
 scoop install ai-usagebar
 ```
 
-Scoop owns updates for Scoop installs (`scoop update ai-usagebar`): a tray
-installed by Scoop offers the release page instead of replacing its own
-files. The tray's built-in updater applies to standalone ZIP installs.
+Scoop-installed trays update themselves through Scoop: **Install Update** (and
+**Automatic**) runs `scoop update ai-usagebar`, then the tray quits while Scoop
+replaces it — usually 10–60 seconds — and relaunches from Scoop's `current`
+path. The Scoop transcript is written to
+`%LOCALAPPDATA%\ai-usagebar\updates\scoop.log`; if Scoop does not deliver the
+requested version, the tray reports that log path and Automatic does not retry
+it in the background. A global Scoop install without the `scoop.ps1` shim
+keeps the release-page fallback. The tray's built-in updater applies to
+standalone ZIP installs.
 
 ![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok and Antigravity with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 2d 7h" and "~63% left at reset", and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](screenshots/windows-tray-dashboard.png)
 
@@ -903,6 +909,14 @@ billing account, so the split is per login session, not per key within a
 bill. See the
 [OpenRouter account guide](docs/openrouter-accounts.md) for the config and
 Waybar examples.
+
+### Multiple keys for other API-key providers
+
+Z.AI, DeepSeek, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the
+same array: one `[[<vendor>.accounts]]` entry per extra key, selected with
+`--vendor <vendor> --account <label>`. Region, team, organization, and display
+settings stay per provider. See the
+[API-key account guide](docs/api-key-accounts.md).
 
 ## Hyprland: float the TUI window
 

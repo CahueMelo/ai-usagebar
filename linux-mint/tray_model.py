@@ -133,6 +133,11 @@ def metric_pace(metric, now=None, language=None):
         return ("ahead", None)
     if projected <= 100:
         spare = max(0, round(100 - projected))
+        if spare < 1:
+            # The official popover paints red once the projected cushion is
+            # gone (model.js meterColor: onTrack with sparePercent < 1 is red,
+            # not yellow), so zero spare reports as behind.
+            return ("behind", tr("~0% spare", "~0% de folga", language))
         return ("near", tr(f"~{spare}% spare", f"~{spare}% de folga", language))
     if used >= 100:
         return ("behind", tr("🔥 Limit reached", "🔥 Limite atingido", language))

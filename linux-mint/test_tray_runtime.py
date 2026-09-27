@@ -16,7 +16,25 @@ SOURCE = Path(__file__).with_name("ai-usagebar-tray")
 LOADER = importlib.machinery.SourceFileLoader("mint_tray_runtime", str(SOURCE))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 tray = importlib.util.module_from_spec(SPEC)
-LOADER.exec_module(tray)
+# The tray resolves its binaries at import (ai-usagebar-tray's module
+# constants); point the env overrides at a temp stub so module load never
+# probes the real $HOME or /usr/bin — the same hermetic rule the Rust
+# tests follow. No test reads these constants back; the stub only keeps
+# the import off real paths.
+_STUB = Path(tempfile.mkdtemp(prefix="mint-tray-bin-")) / "ai-usagebar"
+_STUB.write_text("#!/bin/sh\n")
+_STUB.chmod(0o755)
+_SAVED = {name: os.environ.get(name) for name in ("AI_USAGEBAR_BIN", "AI_USAGEBAR_TUI_BIN")}
+os.environ["AI_USAGEBAR_BIN"] = str(_STUB)
+os.environ["AI_USAGEBAR_TUI_BIN"] = str(_STUB)
+try:
+    LOADER.exec_module(tray)
+finally:
+    for name, value in _SAVED.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
 
 
 class FakeWindow:
