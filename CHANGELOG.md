@@ -25,6 +25,16 @@ Each release is also published at
   [API-key account guide](docs/api-key-accounts.md) spells out. Kimi is left
   out: its fallback is the Kimi Code CLI's single OAuth login. Existing
   configs need no change.
+- **Scoop installs update through Scoop.** Since 1.25.0 a Scoop-installed
+  Windows tray only offers the release page; now Install Update (and
+  Automatic) hands off to `scoop update <app>`, quits while Scoop replaces
+  the tray (usually 10–60 seconds) and comes back by itself through Scoop's
+  `current` folder. Success is Scoop's `current\manifest.json` reaching the
+  new version, not an exit code. The Scoop transcript is at
+  `%LOCALAPPDATA%\ai-usagebar\updates\scoop.log`; if Scoop does not deliver
+  the requested version, the tray reports that log path, and Automatic does
+  not retry it in the background. A global Scoop install without the
+  `scoop.ps1` shim keeps the release page.
 
 ### Fixed
 
@@ -36,6 +46,10 @@ Each release is also published at
   keys all live in `[[<vendor>.accounts]]` — OpenRouter included — was treated
   as unconfigured and never switched on, although each named key has a tab of
   its own.
+- **The tray popover no longer logs a 404 for `/favicon.ico`.** The page had
+  no icon, so the WebView asked the tray's custom protocol for
+  `/favicon.ico` on every open, and the console showed a failed request. The
+  page now declares an empty icon (`data:,`), so nothing is requested.
 
 ## [1.25.0] — 2026-09-25
 
