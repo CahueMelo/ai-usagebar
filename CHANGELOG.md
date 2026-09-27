@@ -9,6 +9,13 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grok Bot on Linux when the sign-in password is in the Secret Service.**
+  Chromium tags those `sand-secrets.json` tokens `v11`. The ciphertext is the
+  same AES-128-CBC envelope as the `v10` peanuts fallback; decryption rejected
+  the tag, so the card stayed on "a stored token could not be decrypted".
+
 ## [1.25.0] — 2026-09-25
 
 ### Added

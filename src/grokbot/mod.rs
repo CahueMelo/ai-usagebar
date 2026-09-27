@@ -5,7 +5,7 @@
 //!
 //! The credential is the app's own OAuth session: `creds.rs` reads
 //! `sand-secrets.json` (read-only, never written), whose token fields are
-//! Chromium OSCrypt `v10` blobs. On Linux the file is
+//! Chromium OSCrypt `v10`/`v11` blobs. On Linux the file is
 //! `~/.config/Grok Bot/sand-secrets.json` and the key is one PBKDF2 round
 //! (`secret-tool lookup application "Grok Bot"`, `"peanuts"` fallback). On
 //! macOS it is `~/Library/Application Support/Grok Bot/sand-secrets.json`
