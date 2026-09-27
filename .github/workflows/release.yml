@@ -430,12 +430,25 @@ jobs:
           } > body.md
 
       # Opt-in PGP signing (#257). Without the GPG_PRIVATE_KEY secret this
-      # step is skipped and the release is byte-for-byte what it was before.
-      # The key travels via env indirection (never inline `${{ }}` expansion
-      # into the script) and the passphrase reaches gpg on stdin — never in
-      # argv, matching how the AUR/Scoop secrets are handled elsewhere here.
+      # pair of steps is skipped and the release is byte-for-byte what it
+      # was before. The presence probe mirrors the AUR/Scoop secret checks:
+      # the secrets context is not readable from a step `if:`, so a prior
+      # step exports the verdict. The key still travels via env indirection
+      # (never inline `${{ }}` expansion into the script) and the passphrase
+      # reaches gpg on stdin — never in argv.
+      - name: Check GPG signing key presence
+        id: gpg_key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "set=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Sign release artifacts (opt-in)
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: steps.gpg_key.outputs.set == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
