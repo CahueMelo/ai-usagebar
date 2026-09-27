@@ -5,7 +5,6 @@ import MdiChevronDown from "~icons/mdi/chevron-down";
 import MdiChevronUp from "~icons/mdi/chevron-up";
 import MdiFire from "~icons/mdi/fire";
 import MdiLoading from "~icons/mdi/loading";
-import MdiRestore from "~icons/mdi/restore";
 import MdiStar from "~icons/mdi/star";
 import MdiStarOutline from "~icons/mdi/star-outline";
 import MdiTune from "~icons/mdi/tune-variant";
@@ -72,7 +71,6 @@ interface ProviderSectionProps {
   lifted?: boolean;
   nowMs: number;
   onCustomize?: () => void;
-  onReset?: () => void;
   onRowAction?: (key: string, action: RowAction) => void;
   onRowMenuOpenChange?: (open: boolean) => void;
   onSwitchAccount?: () => void;
@@ -96,7 +94,6 @@ export function ProviderSection({
   lifted,
   nowMs,
   onCustomize,
-  onReset,
   onRowAction,
   onRowMenuOpenChange,
   onSwitchAccount,
@@ -162,7 +159,6 @@ export function ProviderSection({
         card={card}
         handle={handle}
         onCustomize={onCustomize}
-        onReset={onReset}
         onSwitchAccount={onSwitchAccount}
       />
       <div
@@ -232,14 +228,13 @@ interface ProviderSectionHeaderProps {
   card: Card;
   handle?: SectionHandle;
   onCustomize?: () => void;
-  onReset?: () => void;
   onSwitchAccount?: () => void;
 }
 
 /**
  * ProviderSectionHeader: gray provider mark, name, plan badge, stale hint, warning triangle,
- * and on the trailing edge the per-provider shortcuts OpenUsage keeps in the context menu:
- * Customize (this provider's rows) and Reset (its default rows). An account card also gets the
+ * and on the trailing edge the per-provider shortcut OpenUsage keeps in the context menu:
+ * Customize (this provider's rows). An account card also gets the
  * switch control first: a filled star on the login in use, an outline star button on the others. The
  * header is also the drag handle, so the buttons stop the pointer-down from starting a drag.
  */
@@ -248,7 +243,6 @@ export function ProviderSectionHeader({
   card,
   handle,
   onCustomize,
-  onReset,
   onSwitchAccount,
 }: ProviderSectionHeaderProps) {
   const plan = displayPlan(card.title, card.plan);
@@ -277,9 +271,6 @@ export function ProviderSectionHeader({
       {account ? <AccountControl account={account} title={card.title} onSwitch={onSwitchAccount} /> : null}
       {onCustomize ? (
         <HeaderAction icon={<MdiTune />} label={`${m.customize()} ${card.title}`} onClick={onCustomize} />
-      ) : null}
-      {onReset ? (
-        <HeaderAction icon={<MdiRestore />} label={`${m.reset()} ${card.title}`} onClick={onReset} />
       ) : null}
     </header>
   );

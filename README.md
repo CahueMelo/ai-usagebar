@@ -231,7 +231,7 @@ it in the background. A global Scoop install without the `scoop.ps1` shim
 keeps the release-page fallback. The tray's built-in updater applies to
 standalone ZIP installs.
 
-![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok and Antigravity with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 2d 7h" and "~63% left at reset", and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](screenshots/windows-tray-dashboard.png)
+![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok, Antigravity and Grok Bot with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 1d 9h" and "~92% left at reset", an Antigravity card showing its sign-in error, and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](screenshots/windows-tray-dashboard.png)
 
 Build with a standard Rust toolchain plus **Node.js 20+** (the tray WebView is
 a Vite app; `build.rs` runs `npm run build` on Windows). WebView2 Evergreen
@@ -244,8 +244,10 @@ cargo build --release
 ```
 
 Pin the icon in the Windows 11 notification overflow if it hides behind the
-chevron. Right-click the icon for Refresh, Detect Providers, Open TUI, Start
-with Windows, and Quit; left-click opens the popover. On its first run the
+chevron. Left-click opens the popover; right-click opens the same menu as
+the popover's Options — Customize (Classic only), Settings, Refresh, Detect
+Providers, Open TUI, Start at Login, Check for Updates, About, and Quit — in
+the popover's language. On its first run the
 tray detects which vendors already have a credential on this PC (local files
 and keys only, never the network) and turns exactly those on in
 `config.toml` — it never turns a vendor off. Settings adds a global shortcut
@@ -737,6 +739,51 @@ The plugin depends only on the `ai-usagebar` executable. It runs the fixed
 `ai-usagebar usage --json` command for reports and starts `ai-usagebar-tui`
 only after a right-click. It installs no service, asks for no elevated
 privileges, and does not overwrite user configuration.
+
+### macOS menu bar and Windows tray
+
+`ai-usagebar-tray` shows the same report in a popover that opens from the
+macOS menu bar or the Windows notification area. The **Popover Style** setting
+(Settings → Appearance) picks its look: **Classic** (the default, shown in the
+[Windows install](#windows) section) or **Native**, which follows Apple's
+macOS 26 UI kit on macOS and Fluent (WinUI 3, with Acrylic and the system
+accent) on Windows. Setup and controls: [macOS](macos/README.md),
+[Windows](windows/README.md).
+
+Native on Windows 11:
+
+| Light | Dark |
+|---|---|
+| <img src="screenshots/windows-tray-native-light.png" width="300" alt="Native popover on Windows 11, light: provider tabs with each provider's percentage, the Claude card with Weekly and Fable meters, and the Options button in the footer"> | <img src="screenshots/windows-tray-native-dark.png" width="300" alt="Native popover on Windows 11, dark, over Acrylic"> |
+| <img src="screenshots/windows-tray-native-settings-light.png" width="300" alt="Native Settings on Windows 11, light, on the General tab, with Providers and Preferences beside it"> | <img src="screenshots/windows-tray-native-settings-dark.png" width="300" alt="Native Settings on Windows 11, dark"> |
+
+| Native in Português | Right-click on the notification-area icon |
+|---|---|
+| <img src="screenshots/windows-tray-native-pt-br.png" width="300" alt="Native popover on Windows 11 in Brazilian Portuguese"> | <img src="screenshots/windows-tray-right-click-menu.png" width="254" alt="Native menu over the notification-area icon after a right-click: Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates, About and Quit"> |
+
+Native on macOS 26:
+
+| Light | Dark |
+|---|---|
+| <img src="screenshots/macos-tray-native-light.png" width="300" alt="Native popover on macOS 26, light: segmented provider tabs, the Claude card with its Weekly meter, refresh and settings buttons at the top"> | <img src="screenshots/macos-tray-native-dark.png" width="300" alt="Native popover on macOS 26, dark"> |
+| <img src="screenshots/macos-tray-native-settings-light.png" width="300" alt="Native Settings on macOS 26, light, on the Preferences tab"> | <img src="screenshots/macos-tray-native-settings-dark.png" width="300" alt="Native Settings on macOS 26, dark: Appearance with Language, Theme, Popover Style and Time Format, and Usage Display below"> |
+
+| Options menu (Native) | Right-click on the menu bar icon | Classic |
+|---|---|---|
+| <img src="screenshots/macos-tray-native-options.png" width="300" alt="Options menu open on macOS: Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates, About and Quit"> | <img src="screenshots/macos-tray-right-click-menu.png" width="180" alt="Native menu under the menu bar icon after a right-click: Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login (checked), Check for Updates, About and Quit"> | <img src="screenshots/macos-tray-classic-light.png" width="260" alt="Classic popover on macOS, light, with one card per provider"> |
+
+When a newer release is out, the dashboard shows it above the provider tabs
+(Native) or the cards (Classic), with Install Update where the tray can update
+itself:
+
+| Update available (macOS, Native) | Update available (Windows, Native) |
+|---|---|
+| <img src="screenshots/macos-tray-native-update-light.png" width="300" alt="Native popover on macOS with an Update available card above the provider tabs: AI Usage v1.27.0 is ready to install, with an Install Update button and a blue dot beside the version in the footer"> | <img src="screenshots/windows-tray-native-update-light.png" width="300" alt="Native popover on Windows 11 with the same Update available card and Install Update button above the provider tabs"> |
+| <img src="screenshots/macos-tray-native-update-dark.png" width="300" alt="The same Update available card on macOS, dark"> | <img src="screenshots/windows-tray-native-update-dark.png" width="300" alt="The same Update available card on Windows 11, dark"> |
+
+On macOS the menu bar item shows the starred metrics — Chart (default):
+<img src="screenshots/macos-menu-bar-chart.png" width="40" alt="Menu bar item in Chart mode"> ·
+Logos: <img src="screenshots/macos-menu-bar-logos.png" width="240" alt="Menu bar item in Logos mode: each starred provider's logo with its percentage">
 
 ### Desktop integrations
 

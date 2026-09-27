@@ -54,6 +54,10 @@ mod profile;
 // the native tray hosts use it on Windows and macOS.
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 mod style;
+// The tray icon's right-click menu: the popover's Options entries, order and labels.
+// Pure model compiled everywhere so Linux CI runs its tests; the Windows and macOS hosts use it.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+mod options_menu;
 
 pub use browse::http_url;
 pub use icon::{Severity, tray_icon_rgba};

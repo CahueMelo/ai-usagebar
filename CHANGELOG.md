@@ -9,6 +9,25 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Right-clicking the tray icon opens the Options menu.** On macOS a
+  right-click on the menu bar item no longer opens the popover like a
+  left-click: it shows the footer's Options menu as a native menu —
+  Customize (Classic only), Settings, Refresh, Detect Providers, Open TUI,
+  Start at Login, Check for Updates…, About, Quit — in the popover's
+  language, and the items that name a screen open the popover on that
+  screen. The Windows right-click menu, which had only Refresh, Detect
+  Providers, Open TUI, Start with Windows and Quit, is now the same menu.
+- **Refresh lives in the Options menu only.** The ↺ button in each provider
+  card's header was Reset, not Refresh: one click threw away that
+  provider's row order and visibility. It is gone from the dashboard (Reset
+  stays in the provider's Customize screen, behind a second click), and the
+  row menu's per-provider Refresh went with it; Options → Refresh updates
+  every provider.
+- **Quit in the Options menu is no longer red.** It uses the same color as
+  the other items.
+
 ## [1.26.0] — 2026-09-27
 
 ### Added
