@@ -46,6 +46,14 @@ Each release is also published at
   installation in `~/.cargo/bin` and retains explicit binary paths for
   autostart after it exits; the desktop launcher's TUI action uses the
   detected TUI path.
+- **Release artifacts are PGP-signed when a signing key is configured.** The
+  release workflow now signs every tarball, zip, and bare binary with a
+  detached ASCII signature (`*.sig`), attaches the public key as
+  `ai-usagebar-signing-key.asc`, and adds a verification section with the
+  key's fingerprint to the release notes. This is opt-in at the repo level:
+  nothing changes until the `GPG_PRIVATE_KEY` (armored secret key) and
+  `GPG_PASSPHRASE` secrets are set; releases cut without them are
+  byte-for-byte what they were before (#257).
 
 ### Fixed
 
