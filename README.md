@@ -48,6 +48,7 @@ codebase.
 
 - [Configuration](docs/configuration.md)
 - [Development guide](DEVELOPMENT.md)
+- [TUI mouse support](docs/tui-mouse-support.md)
 - [Windows build guide](docs/windows-build.md)
 - [Ollama Cloud integration](docs/ollama-setup.md)
 - [Claude accounts](docs/claude-accounts.md)
@@ -688,6 +689,38 @@ ai-usagebar-tui                    # opens in your current terminal
 It works in Kitty, Alacritty, Foot, Ghostty, and other terminal emulators. The
 controls and Settings overlay are the same everywhere; no compositor or window
 manager integration is required.
+
+### TUI controls
+
+| Action | Keys | Mouse |
+|---|---|---|
+| Switch vendor tab | `↑` / `↓`, `Tab` / `Shift+Tab`, `←` / `→` | Click a sidebar entry |
+| Refresh current / all | `r` / `R` | Click the footer action |
+| Open Settings | `s` | Click the footer action |
+| Quit | `q` / `Esc` | Click the footer action |
+| Context view | `c` | — |
+
+In Settings, `↑`/`↓`/`Tab` move the focus ring, `←`/`→`/`space` change the
+focused control, `Ctrl-S` (or `Enter` on Save) saves, and `Esc` closes. Click
+a field to focus it, click an on/off cell to toggle it, and click the
+Primary vendor's name to open a picker popup (`↑`/`↓`, `Enter`/`space`,
+`Esc`; a click outside closes it).
+
+### Which vendors the Primary vendor picker offers
+
+The picker lists every vendor that can actually fetch data, not every vendor
+that exists:
+
+1. Vendors switched **on** in Providers.
+2. **GitHub Copilot** always (its credential lives in the GitHub CLI; there is
+   no local key to enable).
+3. Key vendors **off** but still reachable — a saved API key or an exported
+   env var (`env set (overrides)` in the API keys list).
+
+A vendor that is off with no credential is left out on purpose: choosing it as
+primary would produce a dashboard it cannot fetch from, and saving such a
+primary is blocked (`save_does_not_write_a_disabled_primary`). Turn a vendor
+on first; it then shows up in the picker.
 
 ## Native desktop integrations
 

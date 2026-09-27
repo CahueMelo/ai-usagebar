@@ -581,12 +581,12 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
             true
         }
         // Up/Down are the primary vendor-menu keys (vertical navigation);
-        // Tab/l/←/→ remain as secondary aliases.
-        KeyCode::Down | KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => {
+        // Tab and ←/→ remain as secondary aliases.
+        KeyCode::Down | KeyCode::Tab | KeyCode::Right => {
             app.next_tab();
             false
         }
-        KeyCode::Up | KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left => {
+        KeyCode::Up | KeyCode::BackTab | KeyCode::Left => {
             app.prev_tab();
             false
         }
@@ -598,7 +598,7 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
 /// action only when the event needs work from the event loop; focus and tab
 /// selection mutate `app` directly.
 fn handle_mouse(app: &mut App, m: &event::MouseEvent) -> Option<MouseAction> {
-    use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+    use ai_usagebar::tui::settings::{Focus as SFocus, PrimaryPicker, SettingsRow};
     use ratatui::layout::Position;
 
     if m.kind != MouseEventKind::Down(MouseButton::Left) {
@@ -611,6 +611,26 @@ fn handle_mouse(app: &mut App, m: &event::MouseEvent) -> Option<MouseAction> {
     let pos = Position::new(m.column, m.row);
 
     if let Some(s) = app.settings.as_mut() {
+        // The vendor picker consumes clicks while open: a choice row selects,
+        // a click anywhere else closes it without changing the radio.
+        if s.picker.is_some() {
+            let hit = app.hit.borrow();
+            let picked = hit
+                .settings_rows
+                .iter()
+                .find_map(|(row, rect)| match row {
+                    SettingsRow::Pick(i) if rect.contains(pos) => Some(*i),
+                    _ => None,
+                });
+            drop(hit);
+            if let Some(i) = picked
+                && let Some(vendor) = s.primary_choices.get(i).copied()
+            {
+                s.primary = vendor;
+            }
+            s.picker = None;
+            return None;
+        }
         let hit = app.hit.borrow();
         let (row, _) = hit
             .settings_rows
@@ -630,6 +650,35 @@ fn handle_mouse(app: &mut App, m: &event::MouseEvent) -> Option<MouseAction> {
             }
             SettingsRow::Focus(focus) => {
                 s.focus = focus;
+                None
+            }
+            SettingsRow::OpenPicker => {
+                // The name cell opens the vendor picker anchored under the
+                // radio row, cursor on the current pick.
+                let cursor = s
+                    .primary_choices
+                    .iter()
+                    .position(|v| *v == s.primary)
+                    .unwrap_or(0);
+                s.picker = Some(PrimaryPicker {
+                    cursor,
+                    scroll: 0,
+                });
+                None
+            }
+            SettingsRow::Switch(focus, code, mods) => {
+                // A click on a value cell focuses that row and sends the
+                // cell's key: space toggles switches, ←/→ step the primary.
+                s.focus = focus;
+                Some(MouseAction::Settings(ai_usagebar::tui::settings::handle_key(
+                    s, code, mods,
+                )))
+            }
+            SettingsRow::HintKey(code, mods) => Some(MouseAction::Settings(
+                ai_usagebar::tui::settings::handle_key(s, code, mods),
+            )),
+            SettingsRow::Pick(_) => {
+                // Picker clicks are consumed by the interception above.
                 None
             }
         }
@@ -702,6 +751,414 @@ mod tests {
             ],
             Theme::default(),
         )
+    }
+
+    /// Settings state with the provider switch at `index` focused.
+    fn settings_focused_on_provider(index: usize) -> App {
+        use ai_usagebar::tui::settings::{Focus as SFocus, KeyInput, ProviderSwitch, SettingsState};
+        use ai_usagebar::vendor::VendorId;
+
+        let mut app = app_with_two();
+        app.settings = Some(SettingsState {
+            focus: SFocus::Vendor(index),
+            primary_choices: VendorId::all().to_vec(),
+            primary: VendorId::Anthropic,
+            keys: ai_usagebar::tui::settings::KEY_VENDORS
+                .iter()
+                .map(|_| KeyInput::default())
+                .collect(),
+            vendors: VendorId::all()
+                .iter()
+                .map(|_| ProviderSwitch {
+                    enabled: false,
+                    dirty: false,
+                })
+                .collect(),
+            notify_enabled: true,
+            notify_enabled_dirty: false,
+            notify_threshold: KeyInput::from_config(Some("97")),
+            status: String::new(),
+            scroll: 0,
+            picker: None,
+        });
+        app
+    }
+
+    /// Screen rows (buffer y) where `needle` renders as a provider switch
+    /// row: the label padded to the row's fixed width plus an on/off value,
+    /// which API-key rows and other vendor names never match.
+    fn provider_row_positions(
+        terminal: &ratatui::Terminal<ratatui::backend::TestBackend>,
+        needle: &str,
+    ) -> Vec<u16> {
+        let needle = format!("{:<11}", needle);
+        let buffer = terminal.backend().buffer();
+        let area = buffer.area;
+        let mut rows = Vec::new();
+        for y in area.top()..area.bottom() {
+            let mut line = String::new();
+            for x in area.left()..area.right() {
+                line.push_str(buffer[(x, y)].symbol());
+            }
+            if line.contains(&needle) && (line.contains(" off") || line.contains(" on")) {
+                rows.push(y);
+            }
+        }
+        rows
+    }
+
+    fn click_at(column: u16, row: u16) -> event::MouseEvent {
+        event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn clicking_a_provider_selects_the_row_the_user_sees_while_scrolled() {
+        use ai_usagebar::tui::settings::Focus as SFocus;
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // Moonshot sits mid-provider-list (index 10); on a short terminal the
+        // overlay body scrolls to follow the focused switch, which is where
+        // unscrolled hit rects made neighbor clicks land on the wrong row.
+        let moon = 10;
+        let mut app = settings_focused_on_provider(moon);
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+        assert!(app.settings.as_ref().unwrap().scroll > 0, "body must scroll");
+
+        let assert_click_selects = |app: &mut App,
+                                    terminal: &mut ratatui::Terminal<TestBackend>,
+                                    label: &str,
+                                    expected: usize| {
+            let rows = provider_row_positions(terminal, label);
+            assert_eq!(rows.len(), 1, "{label} must render exactly once");
+            let row = rows[0];
+            let click = click_at(30, row);
+            let _ = handle_mouse(app, &click);
+            assert_eq!(
+                app.settings.as_ref().unwrap().focus,
+                SFocus::Vendor(expected),
+                "clicking {label} on row {row} must focus its switch"
+            );
+            terminal.draw(|f| draw_view(f, app)).unwrap();
+        };
+
+        // One visible row above Moonshot: Novita.
+        assert_click_selects(&mut app, &mut terminal, "Novita", moon - 1);
+        // Two rows above while scrolled: Kilo.
+        assert_click_selects(&mut app, &mut terminal, "Kilo", moon - 2);
+        // Clicking Moonshot's own row keeps it focused.
+        assert_click_selects(&mut app, &mut terminal, "Moonshot", moon);
+    }
+
+    #[test]
+    fn clicking_a_provider_selects_the_row_when_the_body_fits() {
+        use ai_usagebar::tui::settings::Focus as SFocus;
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let moon = 10;
+        let mut app = settings_focused_on_provider(moon);
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+        assert_eq!(app.settings.as_ref().unwrap().scroll, 0);
+
+        // Neighbor rows on both sides, with everything unscrolled.
+        for (label, expected) in [
+            ("Novita", moon - 1),
+            ("Moonshot", moon),
+            ("Grok", moon + 1),
+            ("SuperGrok", moon + 2),
+        ] {
+            let rows = provider_row_positions(&terminal, label);
+            assert_eq!(rows.len(), 1, "{label} must render exactly once");
+            let _ = handle_mouse(&mut app, &click_at(30, rows[0]));
+            assert_eq!(
+                app.settings.as_ref().unwrap().focus,
+                SFocus::Vendor(expected),
+                "clicking {label} on row {} must focus its switch",
+                rows[0]
+            );
+            terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+        }
+    }
+
+    /// Rect of a recorded hint link by its synthetic key payload.
+    fn hint_link_rect(
+        app: &App,
+        code: ratatui::crossterm::event::KeyCode,
+    ) -> ratatui::layout::Rect {
+        app.hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                ai_usagebar::tui::settings::SettingsRow::HintKey(c, _)
+                    if *c == code && rect.width > 0 =>
+                {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .expect("hint link must be recorded")
+    }
+
+    #[test]
+    fn clicking_the_settings_hint_close_link_closes_the_overlay() {
+        use ai_usagebar::tui::settings::Action as SAction;
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ratatui::crossterm::event::KeyCode;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = settings_focused_on_provider(10);
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        let close = hint_link_rect(&app, KeyCode::Esc);
+        let action = handle_mouse(&mut app, &click_at(close.x + close.width / 2, close.y));
+        assert!(matches!(
+            action,
+            Some(MouseAction::Settings(SAction::Close))
+        ));
+    }
+
+    #[test]
+    fn clicking_the_settings_hint_toggle_link_toggles_the_focused_provider() {
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ratatui::crossterm::event::KeyCode;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let moon = 10;
+        let mut app = settings_focused_on_provider(moon);
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        let toggle = hint_link_rect(&app, KeyCode::Char(' '));
+        let _ = handle_mouse(&mut app, &click_at(toggle.x + toggle.width / 2, toggle.y));
+        let state = app.settings.as_ref().unwrap();
+        assert!(state.vendors[moon].enabled, "toggle link flips the switch");
+        assert!(state.vendors[moon].dirty, "toggle link marks it dirty");
+    }
+
+    /// Rect of a recorded provider switch cell by vendor index.
+    fn toggle_rect_of(app: &App, i: usize) -> ratatui::layout::Rect {
+        use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+
+        app.hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::Switch(SFocus::Vendor(v), _, _) if *v == i => Some(*rect),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("provider {i} has no switch cell"))
+    }
+
+    #[test]
+    fn clicking_a_provider_switch_cell_toggles_it_without_losing_the_click() {
+        use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let moon = 10;
+        let mut app = settings_focused_on_provider(moon);
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // Clicking the LABEL of an unfocused provider only focuses it.
+        let focus_rect = app
+            .hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::Focus(SFocus::Vendor(v)) if *v == moon - 1 => Some(*rect),
+                _ => None,
+            })
+            .unwrap();
+        let _ = handle_mouse(&mut app, &click_at(focus_rect.x + 4, focus_rect.y));
+        let state = app.settings.as_ref().unwrap();
+        assert_eq!(state.focus, SFocus::Vendor(moon - 1));
+        assert!(!state.vendors[moon - 1].enabled, "label click must not toggle");
+
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // Clicking the on/off cell of that row toggles it in place.
+        let toggle = toggle_rect_of(&app, moon - 1);
+        let _ = handle_mouse(&mut app, &click_at(toggle.x + 2, toggle.y));
+        let state = app.settings.as_ref().unwrap();
+        assert!(state.vendors[moon - 1].enabled, "switch click toggles");
+        assert!(state.vendors[moon - 1].dirty);
+
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // The reported case: clicking the focused row's own switch.
+        let own = toggle_rect_of(&app, moon);
+        let _ = handle_mouse(&mut app, &click_at(own.x + 2, own.y));
+        let state = app.settings.as_ref().unwrap();
+        assert_eq!(state.focus, SFocus::Vendor(moon));
+        assert!(state.vendors[moon].enabled, "own switch click toggles");
+    }
+
+    /// Rect of a recorded primary-radio arrow cell (◀ or ▶) by its key.
+    fn primary_arrow_rect(
+        app: &App,
+        code: ratatui::crossterm::event::KeyCode,
+    ) -> ratatui::layout::Rect {
+        use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+
+        app.hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::Switch(SFocus::Primary, c, _) if *c == code => Some(*rect),
+                _ => None,
+            })
+            .expect("primary arrow cell must be recorded")
+    }
+
+    /// Clicking the focused Primary radio's ◀/▶ arrows steps the vendor
+    /// radio both ways.
+    #[test]
+    fn clicking_the_primary_arrows_steps_the_vendor_radio() {
+        use ai_usagebar::tui::settings::Focus as SFocus;
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
+        use ratatui::crossterm::event::KeyCode;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = settings_focused_on_provider(10);
+        app.settings.as_mut().unwrap().focus = SFocus::Primary;
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // ▶ steps forward: Anthropic → AnthropicApi.
+        let next = primary_arrow_rect(&app, KeyCode::Right);
+        let _ = handle_mouse(&mut app, &click_at(next.x, next.y));
+        assert_eq!(
+            app.settings.as_ref().unwrap().primary,
+            VendorId::AnthropicApi
+        );
+
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // ◀ steps back: AnthropicApi → Anthropic.
+        let prev = primary_arrow_rect(&app, KeyCode::Left);
+        let _ = handle_mouse(&mut app, &click_at(prev.x, prev.y));
+        assert_eq!(
+            app.settings.as_ref().unwrap().primary,
+            VendorId::Anthropic
+        );
+        // The radio keeps keyboard focus through both clicks.
+        assert_eq!(app.settings.as_ref().unwrap().focus, SFocus::Primary);
+    }
+
+    /// Clicking the primary vendor's name opens the picker; clicking a
+    /// choice selects it and closes the popup.
+    #[test]
+    fn clicking_the_primary_name_opens_the_picker_and_a_choice_selects_it() {
+        use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = settings_focused_on_provider(10);
+        app.settings.as_mut().unwrap().focus = SFocus::Primary;
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        let name_cell = app
+            .hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::OpenPicker => Some(*rect),
+                _ => None,
+            })
+            .expect("focused primary has a name cell");
+        let _ = handle_mouse(&mut app, &click_at(name_cell.x + 2, name_cell.y));
+        let picker = app.settings.as_ref().unwrap().picker;
+        assert!(picker.is_some(), "name click opens the picker");
+        assert_eq!(picker.unwrap().cursor, 0, "cursor starts on the current pick");
+
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        let choice_rect = app
+            .hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::Pick(3) => Some(*rect),
+                _ => None,
+            })
+            .expect("picker records choice rows");
+        let _ = handle_mouse(&mut app, &click_at(choice_rect.x + 2, choice_rect.y));
+        let state = app.settings.as_ref().unwrap();
+        assert_eq!(state.primary, VendorId::Copilot, "choice click selects it");
+        assert!(state.picker.is_none(), "selection closes the popup");
+    }
+
+    /// With the picker open, a click outside its rows closes it without
+    /// selecting or focusing anything underneath.
+    #[test]
+    fn clicking_outside_the_picker_closes_it_without_selecting() {
+        use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let moon = 10;
+        let mut app = settings_focused_on_provider(moon);
+        app.settings.as_mut().unwrap().focus = SFocus::Primary;
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        let name_cell = app
+            .hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::OpenPicker => Some(*rect),
+                _ => None,
+            })
+            .unwrap();
+        let _ = handle_mouse(&mut app, &click_at(name_cell.x + 2, name_cell.y));
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // A provider row click lands outside the popup: it only closes it.
+        let provider_row = app
+            .hit
+            .borrow()
+            .settings_rows
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::Focus(SFocus::Vendor(v)) if *v == moon - 1 => Some(*rect),
+                _ => None,
+            })
+            .unwrap();
+        let _ = handle_mouse(&mut app, &click_at(provider_row.x + 4, provider_row.y));
+        let state = app.settings.as_ref().unwrap();
+        assert!(state.picker.is_none(), "outside click closes the picker");
+        assert_eq!(state.primary, VendorId::Anthropic, "no selection happened");
+        assert_eq!(state.focus, SFocus::Primary, "the closing click is consumed");
     }
 
     #[test]

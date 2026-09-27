@@ -445,7 +445,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let mut bindings = vec![
         FooterBinding {
             action: None,
-            key: "tab/h/l",
+            key: "tab / shift+tab / ↑ / ↓ / ← / →",
             description: "switch",
         },
         FooterBinding {
@@ -573,6 +573,7 @@ mod tests {
             notify_threshold: KeyInput::from_config(Some("97")),
             status: String::new(),
             scroll: 0,
+            picker: None,
         }
     }
 

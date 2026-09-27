@@ -12,10 +12,14 @@ Each release is also published at
 ### Added
 
 - The TUI vendor menu is now navigated with the Up/Down arrow keys (wrapping),
-  with `Tab`/`Shift+Tab`/`l`/`h`/`←`/`→` kept as secondary shortcuts. Mouse
+  with `Tab`/`Shift+Tab`/`←`/`→` kept as secondary shortcuts. Mouse
   clicks work in the TUI: click a vendor menu entry to select it, click a
   footer action to refresh, refresh all, open Settings, or quit, click a
-  Settings field to focus it, or click **Save** to save.
+  Settings field to focus it, or click **Save** to save. In Settings the
+  on/off cells toggle their provider (or the quota-alerts switch) and the
+  focused Primary vendor's ◀/▶ arrows step the radio; the hint line is
+  clickable too: save, close, toggle, reveal and change-vendor segments send
+  their key through the same handler.
 
 ## [1.25.0] — 2026-09-25
 
