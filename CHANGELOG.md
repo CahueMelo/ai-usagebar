@@ -21,6 +21,73 @@ Each release is also published at
   clickable too: save, close, toggle, reveal and change-vendor segments send
   their key through the same handler.
 
+## [1.26.0] — 2026-09-27
+
+### Added
+
+- **Named accounts for every API-key provider.** The `[[openrouter.accounts]]`
+  array (#221) now works for `[zai]`, `[deepseek]`, `[kilo]`, `[novita]`,
+  `[moonshot]`, `[grok]`, `[minimax]`, and `[orcarouter]`: one entry per extra
+  key, each with its own TUI tab, `usage` report entry (`deepseek@work`),
+  macOS menu choice, and `<vendor>/<label>` cache, selected in the widget with
+  `--vendor <vendor> --account <label>`. The section's existing key stays the
+  default account and its cache path does not move; `show_default_account`
+  hides it once every key is named. Labels follow OpenRouter's rules — no path
+  separators, no duplicates, a key source per entry — and an unknown label
+  fails instead of falling back to the default key. Region, team,
+  organization, and display settings stay per provider, which the new
+  [API-key account guide](docs/api-key-accounts.md) spells out. Kimi is left
+  out: its fallback is the Kimi Code CLI's single OAuth login. Existing
+  configs need no change.
+- **Scoop installs update through Scoop.** Since 1.25.0 a Scoop-installed
+  Windows tray only offers the release page; now Install Update (and
+  Automatic) hands off to `scoop update <app>`, quits while Scoop replaces
+  the tray (usually 10–60 seconds) and comes back by itself through Scoop's
+  `current` folder. Success is Scoop's `current\manifest.json` reaching the
+  new version, not an exit code. The Scoop transcript is at
+  `%LOCALAPPDATA%\ai-usagebar\updates\scoop.log`; if Scoop does not deliver
+  the requested version, the tray reports that log path, and Automatic does
+  not retry it in the background. A global Scoop install without the
+  `scoop.ps1` shim keeps the release page.
+- **Linux Mint Cinnamon tray frontend.** An experimental GTK dashboard reads
+  the existing `usage --json` report, shows provider quota groups with the
+  icon marks already shipped for Omarchy, color-coded pacing bars, a flame
+  warning when projected usage exceeds the limit, and concise disconnected
+  cards. It opens from the native status icon, hides on focus loss, stays out
+  of the taskbar, and offers settings and refresh actions beside each provider.
+  The frontend supports English and Portuguese and retains cached quota rows
+  when authentication temporarily fails. The installer recognizes the Cargo
+  installation in `~/.cargo/bin` and retains explicit binary paths for
+  autostart after it exits; the desktop launcher's TUI action uses the
+  detected TUI path.
+- **Release artifacts are PGP-signed when a signing key is configured.** The
+  release workflow now signs every tarball, zip, and bare binary with a
+  detached ASCII signature (`*.sig`), attaches the public key as
+  `ai-usagebar-signing-key.asc`, and adds a verification section with the
+  key's fingerprint to the release notes. This is opt-in at the repo level:
+  nothing changes until the `GPG_PRIVATE_KEY` (armored secret key) and
+  `GPG_PASSPHRASE` secrets are set; releases cut without them are
+  byte-for-byte what they were before (#257).
+
+### Fixed
+
+- **Grok Bot on Linux when the sign-in password is in the Secret Service.**
+  Chromium tags those `sand-secrets.json` tokens `v11`. The ciphertext is the
+  same AES-128-CBC envelope as the `v10` peanuts fallback; decryption rejected
+  the tag, so the card stayed on "a stored token could not be decrypted".
+- **OrcaRouter from the macOS menu bar.** The menu bar selects a provider with
+  `--vendor <slug>`, but the widget only accepted OrcaRouter as `orca-router`,
+  so `--vendor orcarouter` was rejected and the entry never fetched. The
+  widget now takes the slug; `orca-router` stays accepted as an alias.
+- **`detect` counts a named API-key account as a credential.** A provider whose
+  keys all live in `[[<vendor>.accounts]]` — OpenRouter included — was treated
+  as unconfigured and never switched on, although each named key has a tab of
+  its own.
+- **The tray popover no longer logs a 404 for `/favicon.ico`.** The page had
+  no icon, so the WebView asked the tray's custom protocol for
+  `/favicon.ico` on every open, and the console showed a failed request. The
+  page now declares an empty icon (`data:,`), so nothing is requested.
+
 ## [1.25.0] — 2026-09-25
 
 ### Added
@@ -3104,7 +3171,8 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...HEAD
+[1.26.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.22.0...v1.23.0

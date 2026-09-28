@@ -23,7 +23,8 @@ codebase.
 - An optional Claude Code context view reads recent local session usage without
   scanning entire histories.
 - Native integrations are available for Omarchy, GNOME Shell, KDE Plasma 6,
-  and a macOS/Windows system-tray popover (`ai-usagebar-tray`).
+  and a macOS/Windows system-tray popover (`ai-usagebar-tray`). An experimental
+  GTK tray frontend for Linux Mint is in [`linux-mint/`](linux-mint/README.md).
 - One bar item can cycle through enabled providers. `[ui] primary` controls the
   initial provider in both the widget and TUI.
 - Atomic caches and file locking prevent duplicate requests from multi-monitor
@@ -221,9 +222,15 @@ scoop bucket add akitaonrails https://github.com/akitaonrails/scoop-bucket
 scoop install ai-usagebar
 ```
 
-Scoop owns updates for Scoop installs (`scoop update ai-usagebar`): a tray
-installed by Scoop offers the release page instead of replacing its own
-files. The tray's built-in updater applies to standalone ZIP installs.
+Scoop-installed trays update themselves through Scoop: **Install Update** (and
+**Automatic**) runs `scoop update ai-usagebar`, then the tray quits while Scoop
+replaces it — usually 10–60 seconds — and relaunches from Scoop's `current`
+path. The Scoop transcript is written to
+`%LOCALAPPDATA%\ai-usagebar\updates\scoop.log`; if Scoop does not deliver the
+requested version, the tray reports that log path and Automatic does not retry
+it in the background. A global Scoop install without the `scoop.ps1` shim
+keeps the release-page fallback. The tray's built-in updater applies to
+standalone ZIP installs.
 
 ![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok and Antigravity with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 2d 7h" and "~63% left at reset", and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](screenshots/windows-tray-dashboard.png)
 
@@ -764,13 +771,14 @@ The plugin depends only on the `ai-usagebar` executable. It runs the fixed
 only after a right-click. It installs no service, asks for no elevated
 privileges, and does not overwrite user configuration.
 
-### GNOME, KDE, macOS and Windows
+### Desktop integrations
 
 | Integration | Supported providers | Notes |
 |---|---|---|
 | [macOS menu bar](macos/README.md) | Whatever `usage --json` reports | `ai-usagebar-tray`: WKWebView popover + each ready provider's name and usage with a chart glyph. |
 | [GNOME Shell](gnome-extension/README.md) | Claude, Codex, Z.AI, OpenRouter, DeepSeek, Google Antigravity | Antigravity's two quota pools appear as grouped rows. |
 | [KDE Plasma 6](kde-plasmoid/README.md) | Whatever `usage --json` reports | Provider tabs in the popup; vendor is per applet instance. |
+| [Linux Mint / Cinnamon](linux-mint/README.md) | Whatever `usage --json` reports | Experimental GTK dashboard with provider icons; left-click the status icon. |
 | [Windows tray](windows/README.md) | Whatever `usage --json` reports | NotifyIcon + WebView2 popover; left-click the tray icon. |
 
 Cursor is not available in the GNOME extension yet. On GNOME, use
@@ -934,6 +942,14 @@ billing account, so the split is per login session, not per key within a
 bill. See the
 [OpenRouter account guide](docs/openrouter-accounts.md) for the config and
 Waybar examples.
+
+### Multiple keys for other API-key providers
+
+Z.AI, DeepSeek, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the
+same array: one `[[<vendor>.accounts]]` entry per extra key, selected with
+`--vendor <vendor> --account <label>`. Region, team, organization, and display
+settings stay per provider. See the
+[API-key account guide](docs/api-key-accounts.md).
 
 ## Hyprland: float the TUI window
 
