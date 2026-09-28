@@ -581,12 +581,12 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
             true
         }
         // Up/Down are the primary vendor-menu keys (vertical navigation);
-        // Tab and ←/→ remain as secondary aliases.
-        KeyCode::Down | KeyCode::Tab | KeyCode::Right => {
+        // Tab, ←/→ and the vim aliases h/l remain as secondary shortcuts.
+        KeyCode::Down | KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => {
             app.next_tab();
             false
         }
-        KeyCode::Up | KeyCode::BackTab | KeyCode::Left => {
+        KeyCode::Up | KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left => {
             app.prev_tab();
             false
         }
@@ -1252,6 +1252,13 @@ mod tests {
         assert!(!app.overview);
         assert_eq!(app.active, 0);
         assert!(!handle_key(&mut app, KeyCode::BackTab, KeyModifiers::NONE));
+        assert!(app.overview);
+        // The vim aliases too — a release once dropped them while the docs
+        // still promised them; this pins them to the code.
+        assert!(!handle_key(&mut app, KeyCode::Char('l'), KeyModifiers::NONE));
+        assert!(!app.overview);
+        assert_eq!(app.active, 0);
+        assert!(!handle_key(&mut app, KeyCode::Char('h'), KeyModifiers::NONE));
         assert!(app.overview);
     }
 

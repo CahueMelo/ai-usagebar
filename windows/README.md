@@ -29,7 +29,7 @@ install is updated by Scoop, and **Install Update** runs `scoop update` for
 you (see **Settings → Updates** below), while the tray's built-in updater
 replaces the files of a standalone ZIP install.
 
-![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok and Antigravity with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 2d 7h" and "~63% left at reset", and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](../screenshots/windows-tray-dashboard.png)
+![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok, Antigravity and Grok Bot with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 1d 9h" and "~92% left at reset", an Antigravity card showing its sign-in error, and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](../screenshots/windows-tray-dashboard.png)
 
 ## Requirements
 
@@ -59,23 +59,25 @@ visible.
 | Action | Result |
 |---|---|
 | Left-click | Toggle the popover |
-| Right-click | Refresh, Detect Providers, Open TUI, Start with Windows, Quit |
-| Footer Options ▾ | Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login, Quit |
+| Right-click | The footer's Options menu as a native menu, in the popover's language: Customize (Classic only), Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates…, About, Quit; the screen items open the popover on that screen |
+| Footer Options ▾ | Customize (Classic only), Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates…, About, Quit |
 | Footer “Next update in …” | Refresh now |
 | Click `52% left` under a bar | Flip Used ⟷ Left everywhere (hover shows the other reading) |
 | Click `Resets in …` | Timeline popover with the exact reset time and countdown (Settings → Reset Times switches the row text itself) |
 | Options → Customize (or Return) | Provider list: toggle, drag the grip to reorder, open a provider |
 | Provider Customize | Always Visible vs On Demand rows (toggle + drag across the divider); Reset in the top bar |
 | Options → Settings | Launch at Login, Refresh Every (1/5/10 min), Global Shortcut, Theme, Time Format, Show Usage As, Reset Times, Always Show Pacing, Updates |
-| Provider header icons (right) | Customize that provider's rows, or reset them to the defaults |
-| Right-click a row | Hide row · Star for menu bar (macOS glyph) · Always show / Show on demand · Refresh provider · Customize provider |
+| Provider header icon (right) | Customize that provider's rows (Reset to the defaults is in that screen's top bar) |
+| Right-click a row | Hide row · Star for menu bar (macOS glyph) · Always show / Show on demand · Customize provider |
 | Drag a provider header | Reorder provider sections |
 | Caret inside the card | Show or hide On Demand rows |
 | Global shortcut | Toggle the popover from anywhere (set in Settings → Global Shortcut) |
 | Escape / Back | Back one screen |
 | Escape (dashboard) | Close the popover |
 
-![Right-click menu on the Cursor "Other Models" row — Hide row, Show on demand, Refresh Cursor and Customize Cursor](../screenshots/windows-tray-row-menu.png)
+![Right-click menu on the notification-area icon — Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates, About and Quit](../screenshots/windows-tray-right-click-menu.png)
+
+![Right-click menu on the Cursor "Cursor Models" row — Hide row, Unstar from menu bar, Show on demand and Customize Cursor](../screenshots/windows-tray-row-menu.png)
 
 ![Customize screen — provider list (Claude, Codex, Cursor, SuperGrok, Antigravity on; GitHub Copilot, Z.AI, OpenRouter off) with metric counts, drag grips and on/off switches, Back and Reset in the top bar, and a Settings cross-link at the bottom](../screenshots/windows-tray-customize.png)
 

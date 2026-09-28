@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import MdiEyeOff from "~icons/mdi/eye-off-outline";
 import MdiPin from "~icons/mdi/pin-outline";
 import MdiPinOff from "~icons/mdi/pin-off-outline";
-import MdiRefresh from "~icons/mdi/refresh";
 import MdiStar from "~icons/mdi/star";
 import MdiStarOutline from "~icons/mdi/star-outline";
 import MdiTune from "~icons/mdi/tune-variant";
@@ -15,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { m } from "@/paraglide/messages.js";
 
-export type RowAction = "always" | "customize" | "demand" | "hide" | "refresh" | "star";
+export type RowAction = "always" | "customize" | "demand" | "hide" | "star";
 
 interface RowMenuProps {
   children: ReactNode;
@@ -82,10 +81,6 @@ export function RowMenu({ children, inAlways, providerTitle, starred, onAction, 
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => onAction("refresh")}>
-          <MdiRefresh />
-          <span className="flex-1">{m.refresh()} {providerTitle}</span>
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("customize")}>
           <MdiTune />
           <span className="flex-1">{m.customize()} {providerTitle}</span>
