@@ -34,6 +34,12 @@ const barWindowSchema = manifest.barWidget.schema.find(row => row.key === 'barWi
 assert.equal(barWindowSchema.type, 'enum');
 assert.deepEqual(barWindowSchema.options, ['auto', 'session', 'weekly', 'monthly']);
 assert.equal(barWindowSchema.defaultValue, 'auto');
+for (const key of ['showCursorModels', 'showCursorOther', 'showCursorOnDemand']) {
+  assert.equal(manifest.barWidget.defaults[key], true);
+  const row = manifest.barWidget.schema.find(item => item.key === key);
+  assert.equal(row.type, 'boolean');
+  assert.equal(row.defaultValue, true);
+}
 // The normalizer must accept every option the manifest offers, or the
 // dropdown would write a value the panel silently ignores.
 for (const option of barWindowSchema.options)
@@ -119,6 +125,12 @@ assert.match(panelSource, /Model\.settingsWithOverrides\(root\.settings,\s*root\
 assert.match(panelSource, /bar\.shell\.updateEntryInline\(root\.moduleName,\s*entry\)/);
 assert.match(panelSource, /persistSelection\(selectedEntryId\)/);
 assert.match(panelSource, /Model\.barLabel\(/);
+// Cursor pool switches filter the bar chip and tooltip. The open panel keeps
+// every pool, including the hero numbers.
+assert.match(panelSource, /entrySections:\s*entry\s*\?\s*Model\.groupedSections\(entry\.sections\)/);
+assert.doesNotMatch(panelSource, /filterCursorSections/);
+assert.match(panelSource, /cursorDualHeadline\(item,\s*cursorPoolFlags\(\)\)/);
+assert.match(panelSource, /function panelHeadline\(item\) \{[\s\S]*?cursorDualHeadline\(item\)(?!\s*,)/);
 
 const settingsViewSource = fs.readFileSync(new URL('./SettingsView.qml', import.meta.url), 'utf8');
 assert.match(settingsViewSource, /command:\s*\["ai-usagebar",\s*"settings",\s*"show"\]/);
@@ -769,16 +781,121 @@ const scopedWeekly = model.parseReport(JSON.stringify({entries: [{
   ]
 }]})).entries[0];
 assert.equal(model.headline(scopedWeekly, 'weekly').text, '88%');
-// Pools without any window shape (Cursor-style) fall back to highest.
+// Cursor's two pools are model categories, so the bar shows both side by
+// side no matter which time window is pinned. Left is Cursor Models.
 const cursorLike = model.parseReport(JSON.stringify({entries: [{
-  id: 'cursor', error: null,
+  id: 'cursor', error: null, icon: '❯',
   sections: [
     {type: 'metric', label: 'Cursor Models', percent: 80, value: '80%', detail: '', severity: 'high'},
     {type: 'metric', label: 'Other Models', percent: 20, value: '20%', detail: '', severity: 'low'}
   ]
 }]})).entries[0];
-assert.equal(model.headline(cursorLike, 'weekly').text, '80%');
-assert.equal(model.headline(cursorLike, 'session').text, '80%');
+assert.equal(model.headline(cursorLike, 'weekly').text, '80% · 20%');
+assert.equal(model.headline(cursorLike, 'session').text, '80% · 20%');
+assert.equal(model.headline(cursorLike, 'auto').text, '80% · 20%');
+assert.equal(model.headline(cursorLike).severity, 'high');
+assert.equal(model.headline(cursorLike).percent, 80);
+assert.equal(model.headline(cursorLike).tooltip, 'Cursor Models · 80%\nCursor Other Models · 20%');
+assert.equal(model.isAlarming(cursorLike), false);
+assert.equal(model.barChips([cursorLike], cursorLike, true, true, false, false, false, false)[0].label, '80% · 20%');
+assert.equal(model.barChips([cursorLike], cursorLike, true, true, false, false, false, false)[0].brand, 'cursor.svg');
+assert.equal(model.barStrip([cursorLike], false, false, true, false, false), '❯  80% · 20%');
+const cursorNamed = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor@work', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 35, value: '35%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorNamed).text, '35% · 7%');
+const cursorPrepaid = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 35, value: '35%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: '$0.00 / $5.00'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorPrepaid).text, '35% · 7% · 0%');
+assert.equal(model.headline(cursorPrepaid).tooltip, 'Cursor Models · 35%\nCursor Other Models · 7%\nCursor On Demand · 0%');
+assert.equal(model.headline(cursorPrepaid).severity, 'low');
+const prepaidRow = model.groupedSections(cursorPrepaid.sections).filter(row => row.label === 'On-Demand')[0];
+assert.equal(prepaidRow.type, 'metric');
+assert.equal(prepaidRow.percent, 0);
+assert.equal(prepaidRow.value, '$5.00');
+assert.equal(prepaidRow.detail, '$0.00 of $5.00 used (0%)');
+const cursorSpent = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 35, value: '35%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: '$1.25 / $5.00'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorSpent).text, '35% · 7% · 25%');
+assert.equal(model.groupedSections(cursorSpent.sections).filter(row => row.label === 'On-Demand')[0].value, '$3.75');
+assert.equal(model.groupedSections(cursorSpent.sections).filter(row => row.label === 'On-Demand')[0].percent, 25);
+const cursorDemandHot = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 10, value: '10%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: '$4.80 / $5.00'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorDemandHot).text, '10% · 7% · 96%');
+assert.equal(model.headline(cursorDemandHot).severity, 'critical');
+assert.equal(model.isAlarming(cursorDemandHot), true);
+const hideDemand = { models: true, other: true, demand: false };
+const hideModels = { models: false, other: true, demand: true };
+assert.equal(model.cursorDualHeadline(cursorPrepaid, hideDemand).text, '35% · 7%');
+assert.equal(model.cursorDualHeadline(cursorPrepaid, hideDemand).tooltip, 'Cursor Models · 35%\nCursor Other Models · 7%');
+assert.equal(model.cursorDualHeadline(cursorPrepaid, hideModels).text, '7% · 0%');
+assert.equal(model.cursorDualHeadline(cursorPrepaid, hideModels).tooltip, 'Cursor Other Models · 7%\nCursor On Demand · 0%');
+assert.equal(model.cursorDualHeadline(cursorPrepaid, { models: false, other: false, demand: true }).text, '0%');
+assert.equal(model.cursorDualHeadline(cursorDemandHot, { models: false, other: false, demand: false }).text, '10%');
+assert.equal(model.cursorDualHeadline(cursorDemandHot, { models: true, other: true, demand: false }).severity, 'low');
+const viaDemandFirst = model.toggleCursorPool(model.toggleCursorPool({ models: true, other: true, demand: true }, 'demand'), 'models');
+const viaModelsFirst = model.toggleCursorPool(model.toggleCursorPool({ models: true, other: true, demand: true }, 'models'), 'demand');
+assert.equal(viaDemandFirst.models, viaModelsFirst.models);
+assert.equal(viaDemandFirst.other, viaModelsFirst.other);
+assert.equal(viaDemandFirst.demand, viaModelsFirst.demand);
+assert.equal(viaDemandFirst.models, false);
+assert.equal(viaDemandFirst.other, true);
+assert.equal(viaDemandFirst.demand, false);
+assert.equal(model.cursorDualHeadline(cursorPrepaid, viaDemandFirst).text, '7%');
+const keptLast = model.toggleCursorPool({ models: false, other: false, demand: true }, 'demand');
+assert.equal(keptLast.models, false);
+assert.equal(keptLast.other, false);
+assert.equal(keptLast.demand, true);
+// The quieter pool can still be the one that alarms.
+const cursorApiHot = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 10, value: '10%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 95, value: '95%', detail: '', severity: 'critical'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorApiHot).text, '10% · 95%');
+assert.equal(model.headline(cursorApiHot).severity, 'critical');
+assert.equal(model.isAlarming(cursorApiHot), true);
+// One pool, or the same labels on another vendor, stays a single figure.
+const cursorOne = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 80, value: '80%', detail: '', severity: 'high'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorOne).text, '80%');
+assert.equal(model.headline(cursorOne).tooltip, undefined);
+const cursorLabelsElsewhere = model.parseReport(JSON.stringify({entries: [{
+  id: 'custom:cursorish', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 80, value: '80%', detail: '', severity: 'high'},
+    {type: 'metric', label: 'Other Models', percent: 20, value: '20%', detail: '', severity: 'low'}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorLabelsElsewhere).text, '80%');
 // Buckets without any window shape (Copilot-style) fall back to highest.
 const copilotLike = model.parseReport(JSON.stringify({entries: [{
   id: 'copilot', error: null,

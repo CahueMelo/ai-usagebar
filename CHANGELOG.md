@@ -9,6 +9,16 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **Omarchy bar shows both Cursor pools and prepaid on-demand.** The Quattro
+  chip lists Cursor Models, Other Models, and on-demand used percent in that
+  order (`35% · 7% · 0%`), the same consumed-percent reading OpenRouter uses
+  for a credit balance. The tooltip is one short line per pool. Three switches
+  on the Cursor page turn those figures on and off in the top bar and tooltip
+  only; the open panel still lists every pool, and the last remaining figure
+  cannot be turned off.
+
 ## [1.26.0] — 2026-09-27
 
 ### Added
