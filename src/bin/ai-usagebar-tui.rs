@@ -1255,10 +1255,18 @@ mod tests {
         assert!(app.overview);
         // The vim aliases too — a release once dropped them while the docs
         // still promised them; this pins them to the code.
-        assert!(!handle_key(&mut app, KeyCode::Char('l'), KeyModifiers::NONE));
+        assert!(!handle_key(
+            &mut app,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE
+        ));
         assert!(!app.overview);
         assert_eq!(app.active, 0);
-        assert!(!handle_key(&mut app, KeyCode::Char('h'), KeyModifiers::NONE));
+        assert!(!handle_key(
+            &mut app,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE
+        ));
         assert!(app.overview);
     }
 
