@@ -17,7 +17,9 @@ Each release is also published at
   for a credit balance. The tooltip is one short line per pool. Three switches
   on the Cursor page turn those figures on and off in the top bar and tooltip
   only; the open panel still lists every pool, and the last remaining figure
-  cannot be turned off.
+  cannot be turned off. A pool the report does not contain, such as on-demand
+  with no prepaid row, does not count as that last figure. The bar's urgent
+  color follows the pools still on the chip.
 
 ## [1.26.0] — 2026-09-27
 

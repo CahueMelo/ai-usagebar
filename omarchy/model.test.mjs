@@ -67,12 +67,13 @@ assert.match(panelSource, /setting\("showProvider",\s*false\)/);
 assert.match(panelSource, /setting\("showAll",\s*false\)/);
 assert.match(panelSource, /Model\.normalizeBarWindow\(setting\("barWindow",\s*"auto"\)\)/);
 // The pin covers the bar value and its echoes (hero detail, tooltip):
-// summary (bar label/chips) is pinned, while panel rows and alert state
-// keep the auto headline.
+// summary (bar label/chips) is pinned, while panel rows keep every pool.
+// Cursor's bar urgent state follows the pools still on the chip.
 assert.match(panelSource, /Model\.headline\(entry,\s*barWindow\)/);
 assert.match(panelSource, /Model\.headline\(item,\s*barWindow\)/);
-assert.match(panelSource, /Model\.isAlarming\(entry\)/);
-assert.match(panelSource, /Model\.anyAlarming\(visibleEntries\)/);
+assert.match(panelSource, /Model\.isAlarming\(item\)/);
+assert.match(panelSource, /function shownAnyAlarming\(\)/);
+assert.doesNotMatch(panelSource, /Model\.anyAlarming\(visibleEntries\)/);
 assert.doesNotMatch(panelSource, /autoSummary/);
 assert.match(panelSource, /function\s+setBarWindow\s*\(/);
 assert.match(panelSource, /onBarWindowRequested/);
@@ -868,6 +869,14 @@ const keptLast = model.toggleCursorPool({ models: false, other: false, demand: t
 assert.equal(keptLast.models, false);
 assert.equal(keptLast.other, false);
 assert.equal(keptLast.demand, true);
+// On-demand with no prepaid row cannot be the pool that keeps the bar alive.
+const demandOnly = { models: false, other: false, demand: true };
+assert.equal(model.cursorPoolPresence(cursorLike).demand, false);
+assert.equal(model.cursorPoolPresence(cursorPrepaid).demand, true);
+assert.equal(model.cursorBarFlags(cursorLike, demandOnly).models, true);
+assert.equal(model.cursorBarFlags(cursorLike, demandOnly).demand, false);
+assert.equal(model.cursorDualHeadline(cursorLike, demandOnly).text, '80%');
+assert.equal(model.cursorDualHeadline(cursorLike, demandOnly).severity, 'high');
 // The quieter pool can still be the one that alarms.
 const cursorApiHot = model.parseReport(JSON.stringify({entries: [{
   id: 'cursor', error: null,
@@ -879,6 +888,7 @@ const cursorApiHot = model.parseReport(JSON.stringify({entries: [{
 assert.equal(model.headline(cursorApiHot).text, '10% · 95%');
 assert.equal(model.headline(cursorApiHot).severity, 'critical');
 assert.equal(model.isAlarming(cursorApiHot), true);
+assert.equal(model.cursorDualHeadline(cursorApiHot, { models: true, other: false, demand: false }).severity, 'low');
 // One pool, or the same labels on another vendor, stays a single figure.
 const cursorOne = model.parseReport(JSON.stringify({entries: [{
   id: 'cursor', error: null,

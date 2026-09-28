@@ -142,8 +142,11 @@ pin: its two included pools are model categories, so the chip shows Cursor
 Models, Other Models, and prepaid on-demand used percent side by side
 (`35% · 7% · 0%`). The Cursor page's three switches hide those figures from
 the top bar and tooltip only. The open panel, including its header, still
-lists every pool, and the last remaining figure cannot be turned off.
-Panel rows and alert state still follow the highest percent. `barWindow` falls
+lists every pool, and the last remaining figure cannot be turned off. A pool
+the report does not contain does not count as that last figure. The bar's
+urgent color follows the pools still on the chip; each panel row keeps its
+own color. For every other provider, panel rows and alert state still follow
+the highest percent. `barWindow` falls
 back to the highest percent (balance/text where a vendor has no metric) when
 a vendor lacks the pinned window (a balance-only provider, a weekly-only
 response, or no monthly pool), so the bar never goes blank.

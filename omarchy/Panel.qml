@@ -67,7 +67,7 @@ Panel {
   readonly property bool filterMiss: configuredProvider !== "" && entries.length > 0 && visibleEntries.length === 0
   readonly property bool entryAlarming: shownAlarming()
   readonly property bool alarming: loadError !== "" || filterMiss
-    || (showAll ? Model.anyAlarming(visibleEntries) : entryAlarming)
+    || (showAll ? shownAnyAlarming() : entryAlarming)
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
@@ -166,37 +166,68 @@ Panel {
     }
   }
 
+  function cursorShownFlags() {
+    if (typeof Model.cursorBarFlags === "function")
+      return Model.cursorBarFlags(entry, cursorPoolFlags())
+    return cursorPoolFlags()
+  }
+
   function cursorPoolOn(id) {
-    var flags = cursorPoolFlags()
-    return flags[id] === true
+    return cursorShownFlags()[id] === true
   }
 
   function cursorPoolCanTurnOff(id) {
-    var flags = cursorPoolFlags()
+    var flags = cursorShownFlags()
     if (flags[id] !== true) return false
     var count = (flags.models ? 1 : 0) + (flags.other ? 1 : 0) + (flags.demand ? 1 : 0)
     return count > 1
   }
 
+  function cursorPoolButtons() {
+    var has = typeof Model.cursorPoolPresence === "function"
+      ? Model.cursorPoolPresence(entry)
+      : { models: true, other: true, demand: true }
+    var rows = []
+    if (has.models) rows.push({ poolId: "models", label: "Cursor Models" })
+    if (has.other) rows.push({ poolId: "other", label: "Other Models" })
+    if (has.demand) rows.push({ poolId: "demand", label: "On-Demand" })
+    return rows
+  }
+
   function toggleCursorPool(id) {
-    var next = Model.toggleCursorPool(cursorPoolFlags(), id)
-    if (next.models === showCursorModels && next.other === showCursorOther
-        && next.demand === showCursorOnDemand) return
+    var saved = cursorPoolFlags()
+    var shown = cursorShownFlags()
+    var next = Model.toggleCursorPool(shown, id)
+    if (next.models === shown.models && next.other === shown.other
+        && next.demand === shown.demand) return
+    var has = typeof Model.cursorPoolPresence === "function"
+      ? Model.cursorPoolPresence(entry)
+      : { models: true, other: true, demand: true }
     persistWidgetSettings({
-      showCursorModels: next.models,
-      showCursorOther: next.other,
-      showCursorOnDemand: next.demand
+      showCursorModels: has.models ? next.models : saved.models,
+      showCursorOther: has.other ? next.other : saved.other,
+      showCursorOnDemand: has.demand ? next.demand : saved.demand
     })
   }
 
-  function shownAlarming() {
-    if (!entry) return false
-    if (entry.status === "error" || entry.stale === true) return true
-    if (isCursorEntry(entry) && typeof Model.cursorDualHeadline === "function") {
-      var dual = Model.cursorDualHeadline(entry, cursorPoolFlags())
+  function entryIsAlarming(item) {
+    if (!item) return false
+    if (item.status === "error" || item.stale === true) return true
+    if (isCursorEntry(item) && typeof Model.cursorDualHeadline === "function") {
+      var dual = Model.cursorDualHeadline(item, cursorPoolFlags())
       if (dual) return dual.severity === "critical"
     }
-    return Model.isAlarming(entry)
+    return Model.isAlarming(item)
+  }
+
+  function shownAlarming() {
+    return entryIsAlarming(entry)
+  }
+
+  function shownAnyAlarming() {
+    for (var i = 0; i < visibleEntries.length; i++)
+      if (entryIsAlarming(visibleEntries[i])) return true
+    return false
   }
 
   function selectEntry(index) {
@@ -664,11 +695,7 @@ Panel {
             spacing: Style.spacing.md
 
             Repeater {
-              model: [
-                { poolId: "models", label: "Cursor Models" },
-                { poolId: "other", label: "Other Models" },
-                { poolId: "demand", label: "On-Demand" }
-              ]
+              model: root.cursorPoolButtons()
 
               delegate: Button {
                 required property var modelData

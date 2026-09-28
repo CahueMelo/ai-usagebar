@@ -515,6 +515,19 @@ function cursorOnDemand(entry) {
   return null
 }
 
+function cursorPoolPresence(entry) {
+  var sections = entry && Array.isArray(entry.sections) ? entry.sections : []
+  var models = false
+  var other = false
+  for (var i = 0; i < sections.length; i++) {
+    var section = sections[i]
+    if (!section || section.type !== "metric") continue
+    if (section.label === "Cursor Models") models = true
+    else if (section.label === "Other Models") other = true
+  }
+  return { models: models, other: other, demand: cursorOnDemand(entry) !== null }
+}
+
 // Fixed display order. A missing or unknown flag stays on, and turning the
 // last one off is refused so the bar never goes blank.
 function cursorPoolVisibility(flags) {
@@ -536,6 +549,25 @@ function toggleCursorPool(flags, id) {
   return next
 }
 
+// Flags the chip can actually draw. A switch whose pool is absent (on-demand
+// with no prepaid row) does not count, and when that would leave the bar
+// blank the first pool that does exist stays on. Models win that fallback.
+function cursorBarFlags(entry, flags) {
+  var show = cursorPoolVisibility(flags)
+  var has = cursorPoolPresence(entry)
+  var visible = {
+    models: show.models && has.models,
+    other: show.other && has.other,
+    demand: show.demand && has.demand
+  }
+  if (!visible.models && !visible.other && !visible.demand) {
+    if (has.models) visible.models = true
+    else if (has.other) visible.other = true
+    else if (has.demand) visible.demand = true
+  }
+  return visible
+}
+
 // Cursor's included usage is two model pools, not two time windows, so the
 // 5-hour / weekly / monthly pin does not describe them. Visible pools stay in
 // dashboard order: Cursor Models, then Other Models, then prepaid on-demand
@@ -553,7 +585,7 @@ function cursorDualHeadline(entry, flags) {
     else if (section.label === "Other Models") api = section
   }
   if (!auto || !api) return null
-  var show = cursorPoolVisibility(flags)
+  var show = cursorBarFlags(entry, flags)
   var demand = cursorOnDemand(entry)
   var parts = []
   if (show.models) parts.push({
