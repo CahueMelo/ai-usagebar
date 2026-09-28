@@ -22,7 +22,6 @@ interface NativeDashboardProps {
   onDismissHint: () => void;
   onOpenCustomize: () => void;
   onOpenSettings: () => void;
-  onResetProvider: (id: string) => void;
   onRowAction: (providerId: string, rowKey: string, action: RowAction) => void;
   onRowMenuOpenChange: (open: boolean) => void;
   onSwitchAccount: (vendor: string, label: string) => void;
@@ -54,7 +53,6 @@ export function NativeDashboard({
   onDismissHint,
   onOpenCustomize,
   onOpenSettings,
-  onResetProvider,
   onRowAction,
   onRowMenuOpenChange,
   onSwitchAccount,
@@ -133,7 +131,6 @@ export function NativeDashboard({
               layout={layout}
               nowMs={nowMs}
               onCustomize={() => onCustomizeProvider(selected.id)}
-              onReset={() => onResetProvider(selected.id)}
               onRowAction={(key, action) => onRowAction(selected.id, key, action)}
               onRowMenuOpenChange={onRowMenuOpenChange}
               onSwitchAccount={() => {

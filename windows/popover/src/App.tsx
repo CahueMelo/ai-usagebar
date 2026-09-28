@@ -22,8 +22,10 @@ import {
   emptyPayload,
   loadLayout,
   memoryStorage,
+  menuAction,
   mergeVisibleOrder,
   moveRowToList,
+  optionsMenuLabels,
   parseHostPayload,
   prefsForCard,
   projectCards,
@@ -133,6 +135,34 @@ export default function App() {
     sendCommand("check-update");
   }
 
+  // Native tray menu entry point: the host posts one of the whitelisted actions
+  // and we open the matching popover screen, exactly like the Options items do.
+  function onMenuAction(action: string) {
+    switch (menuAction(action)) {
+      case "customize":
+        setOptionsOpen(false);
+        go("customize");
+        break;
+      case "settings":
+        setOptionsOpen(false);
+        go("settings");
+        break;
+      case "about":
+        openAbout();
+        break;
+      case "check-updates":
+        checkForUpdates();
+        break;
+      default:
+        break;
+    }
+  }
+
+  // The hook is installed once, so it calls onMenuAction through a ref refreshed on every
+  // render — never opening a screen with a stale `screen`/`payload`.
+  const menuActionRef = useRef(onMenuAction);
+  menuActionRef.current = onMenuAction;
+
   useEffect(() => {
     // The host tints its native backdrop by the page's theme, so it hears about every change,
     // including a System theme flipping with the OS, which moves no height to report.
@@ -206,13 +236,23 @@ export default function App() {
         document.documentElement.style.pointerEvents = "";
       }, hold);
     };
+    // The tray host calls this for the native menu items that open a popover
+    // screen (Customize / Settings / About / Check for Updates).
+    window.__AIUB_MENU_ACTION__ = (action) => menuActionRef.current(String(action));
     sendCommand("ready");
     return () => {
       delete window.__AIUB_APPLY__;
       delete window.__AIUB_LOCKCLICKS__;
       delete window.__AIUB_VISIBLE__;
+      delete window.__AIUB_MENU_ACTION__;
     };
   }, []);
+
+  // The native tray menu must match the popover's language: publish the menu's
+  // labels on mount and whenever the language changes.
+  useEffect(() => {
+    sendCommand("menu-labels", optionsMenuLabels(layout.language));
+  }, [layout.language]);
 
   // The panel follows its content (PanelHeightCoordinator): report the intrinsic height of the
   // shell — chrome plus unscrolled content — and let the host clamp it to the work area. A
@@ -331,14 +371,10 @@ export default function App() {
   }
 
   // Row context menu. Hide / Always show / Show on demand rewrite that provider's row prefs the
-  // same way the Customize screen does; Refresh and Customize are provider-level shortcuts.
+  // same way the Customize screen does; Customize is a provider-level shortcut.
   function onRowAction(id: string, key: string, action: RowAction) {
     const card = cards.find((item) => item.id === id);
     if (!card) return;
-    if (action === "refresh") {
-      sendCommand("refresh-entry", { id });
-      return;
-    }
     if (action === "customize") {
       openProvider(id, "dashboard");
       return;
@@ -409,7 +445,6 @@ export default function App() {
                 onDismissHint={() => commit({ ...layout, hintDismissed: true })}
                 onOpenCustomize={() => go("customize")}
                 onOpenSettings={() => go("settings")}
-                onResetProvider={resetProviderRows}
                 onRowAction={onRowAction}
                 onRowMenuOpenChange={setRowMenuOpen}
                 onSwitchAccount={(vendor, label) => sendCommand("switch-account", { vendor, label })}
@@ -432,7 +467,6 @@ export default function App() {
               onCustomizeProvider={(id) => openProvider(id, "dashboard")}
               onDismissHint={() => commit({ ...layout, hintDismissed: true })}
               onOpenCustomize={() => go("customize")}
-              onResetProvider={resetProviderRows}
               onReorder={(ids) => commit({ ...layout, cardOrder: mergeVisibleOrder(layout.cardOrder, ids) })}
               onRowAction={onRowAction}
               onRowMenuOpenChange={setRowMenuOpen}

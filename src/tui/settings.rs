@@ -181,6 +181,26 @@ pub enum Focus {
     Save,
 }
 
+/// An interactive row recorded for mouse hit-testing during the settings draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsRow {
+    /// A focusable control (primary picker, a key field, or the save row).
+    Focus(Focus),
+    /// A value cell that focuses its row and sends the synthetic key through
+    /// [`handle_key`]: space toggles provider / quota-alerts switches,
+    /// `←`/`→` step the primary-vendor radio over its ◀ ▶ arrows.
+    Switch(Focus, KeyCode, KeyModifiers),
+    /// The primary vendor's name cell: clicking opens (or the popup is open
+    /// and a click outside closes) the picker popup.
+    OpenPicker,
+    /// A primary-vendor choice row in the open picker popup; clicking selects
+    /// that vendor.
+    Pick(usize),
+    /// A hint-footer "link": clicking sends the synthetic key through
+    /// [`handle_key`], so save/close/toggle behave exactly as if pressed.
+    HintKey(KeyCode, KeyModifiers),
+}
+
 impl Focus {
     pub fn next(self) -> Self {
         match self {
@@ -206,6 +226,14 @@ impl Focus {
             Focus::Save => Focus::NotifyThreshold,
         }
     }
+}
+
+/// Open state of the primary-vendor picker popup: `cursor` indexes
+/// [`SettingsState::primary_choices`], `scroll` is the list's scroll offset.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PrimaryPicker {
+    pub cursor: usize,
+    pub scroll: u16,
 }
 
 /// Per-field text-input state — cursor + buffer + reveal flag.
@@ -334,6 +362,8 @@ pub struct SettingsState {
     /// First body line scrolled into view. The overlay body outgrew every
     /// terminal once every provider got a row, so rendering follows focus.
     pub scroll: u16,
+    /// Open picker popup for the primary-vendor radio; `None` while closed.
+    pub picker: Option<PrimaryPicker>,
 }
 
 impl SettingsState {
@@ -409,6 +439,7 @@ impl SettingsState {
             notify_threshold: KeyInput::from_config(Some(&cfg.notifications.threshold.to_string())),
             status: String::new(),
             scroll: 0,
+            picker: None,
         }
     }
 
@@ -418,6 +449,16 @@ impl SettingsState {
             Focus::Key(i) => self.keys.get_mut(i),
             _ => None,
         }
+    }
+
+    /// Move focus through the ring. [`Focus::next`]/[`Focus::prev`] own the
+    /// order; these wrappers keep the call sites reading as state methods.
+    fn next_focus(&self) -> Focus {
+        self.focus.next()
+    }
+
+    fn prev_focus(&self) -> Focus {
+        self.focus.prev()
     }
 }
 
@@ -452,6 +493,13 @@ fn saved_status() -> String {
 
 /// Key map. Returns the action to perform after the keypress.
 pub fn handle_key(state: &mut SettingsState, code: KeyCode, mods: KeyModifiers) -> Action {
+    // The vendor picker consumes every key while open (Ctrl-C stays global),
+    // so Esc closes the popup before the modal's Esc arm can.
+    if state.picker.is_some()
+        && !(matches!(code, KeyCode::Char('c')) && mods.contains(KeyModifiers::CONTROL))
+    {
+        return handle_picker_key(state, code);
+    }
     if matches!(code, KeyCode::Esc) {
         return Action::Close;
     }
@@ -470,11 +518,11 @@ pub fn handle_key(state: &mut SettingsState, code: KeyCode, mods: KeyModifiers) 
     }
     match code {
         KeyCode::Tab | KeyCode::Down => {
-            state.focus = state.focus.next();
+            state.focus = state.next_focus();
             return Action::Continue;
         }
         KeyCode::BackTab | KeyCode::Up => {
-            state.focus = state.focus.prev();
+            state.focus = state.prev_focus();
             return Action::Continue;
         }
         _ => {}
@@ -527,6 +575,30 @@ fn try_save(state: &mut SettingsState) -> Action {
             Action::Continue
         }
     }
+}
+
+/// Key handling while the primary-vendor picker is open: ↑/↓ move the cursor
+/// (wrapping), Enter/space select and close, Esc closes without selecting.
+fn handle_picker_key(state: &mut SettingsState, code: KeyCode) -> Action {
+    let count = state.primary_choices.len();
+    if count == 0 {
+        state.picker = None;
+        return Action::Continue;
+    }
+    let Some(picker) = state.picker.as_mut() else {
+        return Action::Continue;
+    };
+    match code {
+        KeyCode::Up => picker.cursor = (picker.cursor + count - 1) % count,
+        KeyCode::Down => picker.cursor = (picker.cursor + 1) % count,
+        KeyCode::Enter | KeyCode::Char(' ') => {
+            state.primary = state.primary_choices[picker.cursor];
+            state.picker = None;
+        }
+        KeyCode::Esc => state.picker = None,
+        _ => {}
+    }
+    Action::Continue
 }
 
 fn handle_primary(state: &mut SettingsState, code: KeyCode) {
@@ -1086,7 +1158,13 @@ fn follow_focus_scroll(focused: usize, total: usize, viewport: u16, current: u16
 }
 
 /// Render the modal overlay over `area`.
-pub fn render(f: &mut Frame, area: Rect, state: &mut SettingsState, theme: &Theme) {
+pub fn render(
+    f: &mut Frame,
+    area: Rect,
+    state: &mut SettingsState,
+    theme: &Theme,
+    hits: &mut Vec<(SettingsRow, Rect)>,
+) {
     let modal = centered_rect(74, 88, area);
     f.render_widget(Clear, modal);
 
@@ -1101,21 +1179,66 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut SettingsState, theme: &Them
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(inner);
 
-    // — Primary vendor + credentials header —
+    // The body long outgrew every terminal once each provider got a row, so
+    // the view follows the focus ring. Compute the offset up front: hit rects
+    // must be recorded at the *rendered* row (unscrolled position minus the
+    // scroll offset), or a click selects the control `scroll` rows away from
+    // the one the user sees.
+    let layout = body_layout(KEY_VENDORS.len(), state.vendors.len());
+    let total = layout.rows + usize::from(!state.status.is_empty());
+    let scroll = follow_focus_scroll(focus_line(state), total, chunks[0].height, state.scroll);
+    state.scroll = scroll;
+
+    // A row's on-screen y is the body top plus its line index minus the scroll
+    // offset (each rendered line is exactly one row). Recorded alongside each
+    // interactive row so a mouse click maps back to a focus target. Rows
+    // scrolled past either edge of the body are not rendered and get no rect.
+    let row_at = |line: usize| {
+        let top = chunks[0].y;
+        let bottom = top.saturating_add(chunks[0].height);
+        let y = top.saturating_add(line as u16).checked_sub(scroll)?;
+        (y >= top && y < bottom).then_some(Rect::new(inner.x, y, inner.width, 1))
+    };
+
+    // — Primary vendor + API keys header —
     let mut lines: Vec<Line> = vec![
         section_header("Primary vendor", "shown first on the bar / TUI", &bubble),
         primary_line(state, &bubble),
         Line::from(""),
-        section_header(
-            "Credentials",
-            "pick a row, type the credential, then Ctrl-S — Claude & Codex use CLI login",
-            &bubble,
-        ),
+        section_header("API keys", "all key providers", &bubble),
     ];
+    if let Some(r) = row_at(1) {
+        // The focused radio renders "◀ name ▶" over a name padded to the
+        // widest choice, so the arrows sit at fixed columns however long the
+        // current pick is. The arrow cells click-step the radio; the name
+        // cell opens the picker popup. Unfocused rows show no arrows — the
+        // first click only focuses.
+        if state.focus == Focus::Primary {
+            let pad = primary_name_pad(state);
+            hits.push((
+                SettingsRow::Switch(Focus::Primary, KeyCode::Left, KeyModifiers::NONE),
+                Rect::new(r.x.saturating_add(5), r.y, 2, 1),
+            ));
+            hits.push((
+                SettingsRow::Switch(Focus::Primary, KeyCode::Right, KeyModifiers::NONE),
+                Rect::new(r.x.saturating_add(9 + pad), r.y, 2, 1),
+            ));
+            hits.push((
+                SettingsRow::OpenPicker,
+                Rect::new(r.x.saturating_add(7), r.y, pad + 2, 1),
+            ));
+        }
+        hits.push((SettingsRow::Focus(Focus::Primary), r));
+    }
+
     for (i, kv) in KEY_VENDORS.iter().enumerate() {
         let focused = state.focus == Focus::Key(i);
+        if let Some(r) = row_at(lines.len()) {
+            hits.push((SettingsRow::Focus(Focus::Key(i)), r));
+        }
         lines.push(key_row(kv, &state.keys[i], focused, &bubble));
     }
+
     lines.push(Line::from(""));
 
     // — Providers on/off (#244) —
@@ -1129,12 +1252,22 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut SettingsState, theme: &Them
             enabled: false,
             dirty: false,
         });
-        lines.push(provider_row(
-            id,
-            switch,
-            state.focus == Focus::Vendor(i),
-            &bubble,
-        ));
+        let focused = state.focus == Focus::Vendor(i);
+        if let Some(r) = row_at(lines.len()) {
+            // The switch cell is pushed first so a click on the on/off value
+            // toggles the row instead of only focusing it. Its rect covers
+            // exactly the rendered value segment: not the name tail (a name
+            // past the 11-column padding pushes the value right) and not the
+            // empty space right of the row.
+            let (value_x, value_w) =
+                switch_cell(id.display_name(), switch_value(switch.enabled), focused);
+            hits.push((
+                SettingsRow::Switch(Focus::Vendor(i), KeyCode::Char(' '), KeyModifiers::NONE),
+                Rect::new(r.x.saturating_add(value_x), r.y, value_w, 1),
+            ));
+            hits.push((SettingsRow::Focus(Focus::Vendor(i)), r));
+        }
+        lines.push(provider_row(id, switch, focused, &bubble));
     }
     lines.push(Line::from(""));
 
@@ -1144,11 +1277,29 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut SettingsState, theme: &Them
         "desktop alert when a quota window crosses the threshold",
         &bubble,
     ));
+    if let Some(r) = row_at(lines.len()) {
+        let (value_x, value_w) = switch_cell(
+            "Quota alerts",
+            switch_value(state.notify_enabled),
+            state.focus == Focus::NotifyEnabled,
+        );
+        hits.push((
+            SettingsRow::Switch(Focus::NotifyEnabled, KeyCode::Char(' '), KeyModifiers::NONE),
+            Rect::new(r.x.saturating_add(value_x), r.y, value_w, 1),
+        ));
+        hits.push((SettingsRow::Focus(Focus::NotifyEnabled), r));
+    }
     lines.push(notify_enabled_line(state, &bubble));
+    if let Some(r) = row_at(lines.len()) {
+        hits.push((SettingsRow::Focus(Focus::NotifyThreshold), r));
+    }
     lines.push(notify_threshold_line(state, &bubble));
     lines.push(Line::from(""));
 
     // — Save + status —
+    if let Some(r) = row_at(lines.len()) {
+        hits.push((SettingsRow::Focus(Focus::Save), r));
+    }
     lines.push(save_line(state.focus == Focus::Save, &bubble));
     if !state.status.is_empty() {
         let ok = state.status.starts_with("saved");
@@ -1160,51 +1311,185 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut SettingsState, theme: &Them
         ]));
     }
 
-    // The body long outgrew every terminal once each provider got a row, so
-    // the view follows the focus ring.
-    let layout = body_layout(KEY_VENDORS.len(), state.vendors.len());
-    let total = layout.rows + usize::from(!state.status.is_empty());
-    state.scroll = follow_focus_scroll(focus_line(state), total, chunks[0].height, state.scroll);
-    f.render_widget(Paragraph::new(lines).scroll((state.scroll, 0)), chunks[0]);
+    // The view follows the focus ring; `scroll` was computed (and persisted
+    // into the state) before the hit rects were recorded.
+    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), chunks[0]);
 
     // Context-aware hint footer.
-    let hint = match state.focus {
-        Focus::Primary => bubble.help_line([
-            ("↑↓/tab", "move"),
-            ("←→", "change vendor"),
-            ("^S", "save"),
-            ("esc", "close"),
-        ]),
-        Focus::Key(_) => bubble.help_line([
-            ("↑↓/tab", "move"),
-            ("type", "edit key"),
-            ("^V", "reveal"),
-            ("^S", "save"),
-            ("esc", "close"),
-        ]),
-        Focus::Vendor(_) => bubble.help_line([
-            ("↑↓/tab", "move"),
-            ("←→/space", "toggle"),
-            ("^S", "save"),
-            ("esc", "close"),
-        ]),
-        Focus::NotifyEnabled => bubble.help_line([
-            ("↑↓/tab", "move"),
-            ("←→/space", "toggle"),
-            ("^S", "save"),
-            ("esc", "close"),
-        ]),
-        Focus::NotifyThreshold => bubble.help_line([
-            ("↑↓/tab", "move"),
-            ("type", "digits 1-100"),
-            ("^S", "save"),
-            ("esc", "close"),
-        ]),
-        Focus::Save => {
-            bubble.help_line([("↑↓/tab", "move"), ("enter/^S", "save"), ("esc", "close")])
-        }
+    /// One hint segment: the key label, its description, and the synthetic key a
+    /// click sends through [`handle_key`] (`None` for pure key hints).
+    type HintSegment<'a> = (&'a str, &'a str, Option<(KeyCode, KeyModifiers)>);
+
+    // Context-aware hint footer. Each segment is (key, description, click):
+    // segments with a key payload are actionable "links" — clicking one sends
+    // that synthetic key through `handle_key`, so save/close/toggle stay in
+    // one place. Pure key hints (move/type/digits) get no click rect.
+    let segments: &[HintSegment] = match state.focus {
+        Focus::Primary => &[
+            ("↑↓/tab", "move", None),
+            (
+                "←→",
+                "change vendor",
+                Some((KeyCode::Right, KeyModifiers::NONE)),
+            ),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
+            ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
+        ],
+        Focus::Key(_) => &[
+            ("↑↓/tab", "move", None),
+            ("type", "edit key", None),
+            (
+                "^V",
+                "reveal",
+                Some((KeyCode::Char('v'), KeyModifiers::CONTROL)),
+            ),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
+            ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
+        ],
+        Focus::Vendor(_) | Focus::NotifyEnabled => &[
+            ("↑↓/tab", "move", None),
+            (
+                "←→/space",
+                "toggle",
+                Some((KeyCode::Char(' '), KeyModifiers::NONE)),
+            ),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
+            ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
+        ],
+        Focus::NotifyThreshold => &[
+            ("↑↓/tab", "move", None),
+            ("type", "digits 1-100", None),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
+            ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
+        ],
+        Focus::Save => &[
+            ("↑↓/tab", "move", None),
+            (
+                "enter/^S",
+                "save",
+                Some((KeyCode::Enter, KeyModifiers::NONE)),
+            ),
+            ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
+        ],
     };
+    let hint = bubble.help_line(segments.iter().map(|(key, desc, _)| (*key, *desc)));
     f.render_widget(Paragraph::new(hint), chunks[1]);
+
+    // Help draws each segment as "key description" joined by " • " (3 cells,
+    // same separator the main footer replicates for its click targets), left
+    // aligned from the row's first cell. Record the same cells for segments
+    // with a click payload, clipped to the visible row width.
+    let right = chunks[1].x.saturating_add(chunks[1].width);
+    let mut x = chunks[1].x;
+    for (key, desc, action) in segments {
+        let width = (crate::display::text_width(key) as u16)
+            .saturating_add(1)
+            .saturating_add(crate::display::text_width(desc) as u16);
+        if let Some((code, mods)) = action
+            && x < right
+        {
+            let visible = width.min(right.saturating_sub(x));
+            if visible > 0 {
+                hits.push((
+                    SettingsRow::HintKey(*code, *mods),
+                    Rect::new(x, chunks[1].y, visible, 1),
+                ));
+            }
+        }
+        x = x.saturating_add(width).saturating_add(3);
+    }
+
+    // The primary-vendor picker floats over the body when open, drawn last so
+    // it lands on top of everything already rendered.
+    if state.picker.is_some() {
+        render_primary_picker(f, state, &bubble, chunks[0], hits);
+    }
+}
+
+/// The primary-vendor dropdown: anchored under the radio row, listing
+/// [`SettingsState::primary_choices`] with the cursor scrolled into view.
+/// Rows are recorded as [`SettingsRow::Pick`] click targets.
+fn render_primary_picker(
+    f: &mut Frame,
+    state: &mut SettingsState,
+    theme: &BubbleTheme,
+    body: Rect,
+    hits: &mut Vec<(SettingsRow, Rect)>,
+) {
+    let count = state.primary_choices.len();
+    if count == 0 {
+        return;
+    }
+    let pad = primary_name_pad(state) as usize;
+    let width = u16::try_from(pad + 6).unwrap_or(u16::MAX).min(body.width);
+    if width < 4 {
+        return;
+    }
+    // Anchor under the radio row (body line 1), capped to the body bottom.
+    let height = (count as u16 + 2)
+        .min(body.bottom().saturating_sub(body.y + 2))
+        .max(3);
+    let area = Rect::new(
+        body.x.saturating_add(2),
+        body.y.saturating_add(2),
+        width,
+        height,
+    );
+
+    f.render_widget(Clear, area);
+    let block = theme.titled_modal_block(" Primary vendor ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(picker) = state.picker.as_mut() else {
+        return;
+    };
+    let viewport = inner.height;
+    picker.scroll = follow_focus_scroll(picker.cursor, count, viewport, picker.scroll);
+    for (index, vendor) in state
+        .primary_choices
+        .iter()
+        .enumerate()
+        .skip(picker.scroll as usize)
+        .take(viewport as usize)
+    {
+        let y = inner.y + u16::try_from(index - picker.scroll as usize).unwrap_or(u16::MAX);
+        let cursor = picker.cursor == index;
+        let current = *vendor == state.primary;
+        let style = if cursor {
+            theme.accent.add_modifier(Modifier::BOLD)
+        } else if current {
+            theme.title
+        } else {
+            theme.text
+        };
+        let line = Line::from(vec![
+            theme.span(if cursor { "▸ " } else { "  " }),
+            Span::styled(format!("{:<pad$}", vendor.display_name(), pad = pad), style),
+            theme.span(if current { "  ✓" } else { "" }),
+        ]);
+        f.render_widget(line, Rect::new(inner.x, y, inner.width, 1));
+        hits.push((
+            SettingsRow::Pick(index),
+            Rect::new(inner.x, y, inner.width, 1),
+        ));
+    }
 }
 
 fn section_header(title: &str, sub: &str, theme: &BubbleTheme) -> Line<'static> {
@@ -1215,22 +1500,34 @@ fn section_header(title: &str, sub: &str, theme: &BubbleTheme) -> Line<'static> 
     ])
 }
 
+/// Display width the primary radio pads its name to: the widest choice, so
+/// the ◀/▶ arrows sit at fixed columns however long the current pick is.
+fn primary_name_pad(state: &SettingsState) -> u16 {
+    state
+        .primary_choices
+        .iter()
+        .map(|v| crate::display::text_width(v.display_name()) as u16)
+        .max()
+        .unwrap_or(1)
+}
+
 fn primary_line(state: &SettingsState, theme: &BubbleTheme) -> Line<'static> {
     let focused = state.focus == Focus::Primary;
     let name = state.primary.display_name().to_string();
     if focused {
+        let pad = primary_name_pad(state) as usize;
         Line::from(vec![
             theme.span("   "),
             Span::styled("▸ ", theme.accent.add_modifier(Modifier::BOLD)),
             Span::styled("◀ ", theme.accent),
             Span::styled(
-                format!(" {name} "),
+                format!(" {:<pad$} ", name, pad = pad),
                 theme
                     .selected
                     .add_modifier(Modifier::REVERSED | Modifier::BOLD),
             ),
             Span::styled(" ▶", theme.accent),
-            theme.muted("    ← → to change"),
+            theme.muted("    ← → or click to change"),
         ])
     } else {
         Line::from(vec![theme.span("     "), Span::styled(name, theme.text)])
@@ -1306,6 +1603,29 @@ fn value_text(input: &KeyInput, focused: bool) -> String {
     chars.into_iter().collect()
 }
 
+/// Labels in provider / notification rows are padded to at least 11 columns;
+/// the renderers and the mouse hit-test share this so a click lands where the
+/// value actually renders.
+fn padded_label(label: &str) -> String {
+    format!("{:<11}", label)
+}
+
+/// The on/off text a provider / quota switch renders.
+fn switch_value(enabled: bool) -> &'static str {
+    if enabled { "on" } else { "off" }
+}
+
+/// The value cell's offset and rendered width. Mirrors provider_row /
+/// notify_enabled_line: a 5-cell focus prefix, the padded label, then either
+/// `" ◀ on ▶ "` when focused or `"  on"` when unfocused. Names past 11
+/// columns push the cell right — never assume a fixed column.
+fn switch_cell(label: &str, value: &str, focused: bool) -> (u16, u16) {
+    let value_x = 5 + crate::display::text_width(&padded_label(label)) as u16;
+    let decoration_w = if focused { 6 } else { 2 };
+    let value_w = decoration_w + crate::display::text_width(value) as u16;
+    (value_x, value_w)
+}
+
 /// One `[<vendor>] enabled` row (#244): the shared display name plus an
 /// on/off value styled like the notification toggle.
 fn provider_row(
@@ -1314,8 +1634,8 @@ fn provider_row(
     focused: bool,
     theme: &BubbleTheme,
 ) -> Line<'static> {
-    let label = format!("{:<11}", id.display_name());
-    let value = if switch.enabled { "on" } else { "off" };
+    let label = padded_label(id.display_name());
+    let value = switch_value(switch.enabled);
     if focused {
         Line::from(vec![
             theme.span("   "),
@@ -1341,8 +1661,8 @@ fn provider_row(
 /// primary selector.
 fn notify_enabled_line(state: &SettingsState, theme: &BubbleTheme) -> Line<'static> {
     let focused = state.focus == Focus::NotifyEnabled;
-    let label = format!("{:<11}", "Quota alerts");
-    let value = if state.notify_enabled { "on" } else { "off" };
+    let label = padded_label("Quota alerts");
+    let value = switch_value(state.notify_enabled);
     if focused {
         Line::from(vec![
             theme.span("   "),
@@ -1498,6 +1818,7 @@ mod tests {
             notify_threshold: KeyInput::from_config(Some("97")),
             status: String::new(),
             scroll: 0,
+            picker: None,
         }
     }
 
@@ -2598,6 +2919,286 @@ enabled = true
         assert_eq!(follow_focus_scroll(5, 0, 10, 3), 0);
     }
 
+    /// Actionable hint segments record `HintKey` click rects on the hint row;
+    /// pure key hints (move/type/digits) never do.
+    #[test]
+    fn render_records_clickable_hint_links_for_the_focused_control() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let theme = crate::theme::Theme::default();
+        let mut state = blank_state(VendorId::Anthropic);
+        state.focus = Focus::Vendor(vendor_index(VendorId::Grok));
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
+            .unwrap();
+
+        let hint_keys: Vec<(KeyCode, KeyModifiers)> = hits
+            .iter()
+            .filter_map(|(row, _)| match row {
+                SettingsRow::HintKey(code, mods) => Some((*code, *mods)),
+                _ => None,
+            })
+            .collect();
+        // Toggle (space), save (^S) and close (esc) are links, recorded in
+        // segment order on a Vendor row.
+        assert_eq!(
+            hint_keys,
+            vec![
+                (KeyCode::Char(' '), KeyModifiers::NONE),
+                (KeyCode::Char('s'), KeyModifiers::CONTROL),
+                (KeyCode::Esc, KeyModifiers::NONE),
+            ]
+        );
+        // Every link lives on the single hint row, below the body.
+        let ys: Vec<u16> = hits
+            .iter()
+            .filter(|(row, _)| matches!(row, SettingsRow::HintKey(..)))
+            .map(|(_, rect)| rect.y)
+            .collect();
+        assert!(ys.windows(2).all(|pair| pair[0] == pair[1]));
+
+        // On the Primary row the change-vendor link is a Right key instead of
+        // the toggle, and pure hints never become clickable anywhere.
+        let mut state = blank_state(VendorId::Anthropic);
+        state.focus = Focus::Primary;
+        let mut hits = Vec::new();
+        terminal
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
+            .unwrap();
+        let hint_keys: Vec<(KeyCode, KeyModifiers)> = hits
+            .iter()
+            .filter_map(|(row, _)| match row {
+                SettingsRow::HintKey(code, mods) => Some((*code, *mods)),
+                _ => None,
+            })
+            .collect();
+        assert!(hint_keys.contains(&(KeyCode::Right, KeyModifiers::NONE)));
+        assert!(!hint_keys.contains(&(KeyCode::Char(' '), KeyModifiers::NONE)));
+    }
+
+    /// Every provider row records a switch-cell click target right of the
+    /// label columns, on the same row as its focus target; the quota-alerts
+    /// row records one too.
+    #[test]
+    fn render_records_switch_cells_right_of_the_labels() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let theme = crate::theme::Theme::default();
+        let mut state = blank_state(VendorId::Anthropic);
+        state.focus = Focus::Vendor(0);
+        let mut terminal = Terminal::new(TestBackend::new(100, 70)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
+            .unwrap();
+
+        let focus_of = |i: usize| {
+            hits.iter().find_map(|(row, rect)| match row {
+                SettingsRow::Focus(Focus::Vendor(v)) if *v == i => Some(*rect),
+                _ => None,
+            })
+        };
+        for (i, id) in VendorId::all().iter().enumerate() {
+            let focus_rect = focus_of(i).unwrap_or_else(|| panic!("vendor {i} has no focus row"));
+            let switch = hits
+                .iter()
+                .find_map(|(row, rect)| match row {
+                    SettingsRow::Switch(Focus::Vendor(v), KeyCode::Char(' '), _) if *v == i => {
+                        Some(*rect)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("vendor {i} has no switch cell"));
+            // The value cell starts after the 5-cell prefix + the padded
+            // label (names past 11 columns push it right) and covers only
+            // the rendered value — never the name tail or the trailing
+            // empty row space.
+            let expected_x =
+                5 + crate::display::text_width(&format!("{:<11}", id.display_name())) as u16;
+            let value_len = if state.vendors[i].enabled { 2 } else { 3 }; // "on" / "off"
+            let focused = state.focus == Focus::Vendor(i);
+            assert_eq!(switch.y, focus_rect.y);
+            assert_eq!(switch.x, focus_rect.x + expected_x);
+            assert_eq!(
+                switch.width,
+                (if focused { 6 } else { 2 }) + value_len,
+                "rendered value segment"
+            );
+            assert!(switch.x + switch.width <= focus_rect.x + focus_rect.width);
+        }
+        // The quota-alerts row has a switch cell as well.
+        assert!(hits.iter().any(|(row, _)| matches!(
+            row,
+            SettingsRow::Switch(Focus::NotifyEnabled, KeyCode::Char(' '), _)
+        )));
+    }
+
+    /// The focused primary radio renders ◀ name ▶: those arrow cells become
+    /// click targets that step the vendor radio both ways.
+    #[test]
+    fn render_records_primary_arrow_cells_when_focused() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let theme = crate::theme::Theme::default();
+        let mut state = blank_state(VendorId::Anthropic);
+        state.focus = Focus::Primary;
+        let mut terminal = Terminal::new(TestBackend::new(100, 70)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
+            .unwrap();
+
+        let focus_rect = hits
+            .iter()
+            .find_map(|(row, rect)| match row {
+                SettingsRow::Focus(Focus::Primary) => Some(*rect),
+                _ => None,
+            })
+            .expect("primary row has a focus target");
+        let prev = hits.iter().find_map(|(row, rect)| match row {
+            SettingsRow::Switch(Focus::Primary, KeyCode::Left, _) => Some(*rect),
+            _ => None,
+        });
+        let next = hits.iter().find_map(|(row, rect)| match row {
+            SettingsRow::Switch(Focus::Primary, KeyCode::Right, _) => Some(*rect),
+            _ => None,
+        });
+        let prev = prev.expect("focused primary has a ◀ cell");
+        let next = next.expect("focused primary has a ▶ cell");
+        assert_eq!(prev.x, focus_rect.x + 5);
+        assert_eq!(prev.width, 2);
+        assert!(next.x > prev.x + 2, "▶ sits right of the vendor name");
+        assert_eq!(next.width, 2);
+        assert_eq!(prev.y, next.y);
+
+        // Unfocused (arrows only render on the focused radio), the row shows
+        // no switch cells: only the focus target exists.
+        let mut state = blank_state(VendorId::Anthropic);
+        state.focus = Focus::Vendor(0);
+        let mut unfocused_hits = Vec::new();
+        terminal
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut unfocused_hits))
+            .unwrap();
+        assert!(
+            !unfocused_hits
+                .iter()
+                .any(|(row, _)| matches!(row, SettingsRow::Switch(Focus::Primary, _, _)))
+        );
+    }
+
+    /// Regression: ▶ used to sit at 9 + the current name's width, so it
+    /// moved on every cycle. The name pads to the widest choice now — the
+    /// arrow columns are identical whichever vendor is picked.
+    #[test]
+    fn primary_arrow_cells_sit_at_fixed_columns() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let theme = crate::theme::Theme::default();
+        let mut terminal = Terminal::new(TestBackend::new(100, 70)).unwrap();
+        let mut arrow_x = |primary: VendorId| {
+            let mut state = blank_state(primary);
+            state.focus = Focus::Primary;
+            let mut hits = Vec::new();
+            terminal
+                .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
+                .unwrap();
+            hits.iter()
+                .find_map(|(row, rect)| match row {
+                    SettingsRow::Switch(Focus::Primary, KeyCode::Right, _) => Some(rect.x),
+                    _ => None,
+                })
+                .expect("focused primary has a ▶ cell")
+        };
+        assert_eq!(arrow_x(VendorId::Anthropic), arrow_x(VendorId::Copilot));
+    }
+
+    /// The picker consumes keys while open: ↑/↓ move the cursor (wrapping),
+    /// Enter/space select and close, Esc closes without selecting — and with
+    /// the picker closed, Esc closes the modal again.
+    #[test]
+    fn picker_key_handling_selects_and_closes() {
+        let mut s = blank_state(VendorId::Anthropic);
+        s.focus = Focus::Primary;
+        s.picker = Some(PrimaryPicker {
+            cursor: 0,
+            scroll: 0,
+        });
+        let count = s.primary_choices.len();
+        assert!(count > 1);
+
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Down, KeyModifiers::NONE),
+            Action::Continue
+        );
+        assert_eq!(s.picker.as_ref().unwrap().cursor, 1);
+        // Wraps at the top.
+        handle_key(&mut s, KeyCode::Up, KeyModifiers::NONE);
+        handle_key(&mut s, KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(s.picker.as_ref().unwrap().cursor, count - 1);
+
+        // Enter selects the cursor's choice and closes the popup.
+        let expected = s.primary_choices[s.picker.as_ref().unwrap().cursor];
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Enter, KeyModifiers::NONE),
+            Action::Continue
+        );
+        assert_eq!(s.primary, expected);
+        assert!(s.picker.is_none());
+
+        // Esc closes the picker without selecting; the next Esc closes the
+        // modal.
+        s.picker = Some(PrimaryPicker {
+            cursor: 2,
+            scroll: 0,
+        });
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Esc, KeyModifiers::NONE),
+            Action::Continue
+        );
+        assert!(s.picker.is_none());
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Esc, KeyModifiers::NONE),
+            Action::Close
+        );
+    }
+
+    /// The open picker records one click row per choice.
+    #[test]
+    fn open_picker_records_one_click_row_per_choice() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let theme = crate::theme::Theme::default();
+        let mut state = blank_state(VendorId::Anthropic);
+        state.focus = Focus::Primary;
+        state.picker = Some(PrimaryPicker {
+            cursor: 0,
+            scroll: 0,
+        });
+        let mut terminal = Terminal::new(TestBackend::new(100, 70)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
+            .unwrap();
+
+        let picks: Vec<usize> = hits
+            .iter()
+            .filter_map(|(row, _)| match row {
+                SettingsRow::Pick(i) => Some(*i),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(picks.len(), state.primary_choices.len());
+        assert_eq!(picks.first().copied(), Some(0));
+        assert_eq!(picks.last().copied(), Some(state.primary_choices.len() - 1));
+    }
+
     /// End-to-end through the real renderer: on a terminal shorter than the
     /// overlay body, focusing a late provider switch keeps it and the Save
     /// button on screen — the reason the scroll exists.
@@ -2611,9 +3212,10 @@ enabled = true
         let theme = crate::theme::Theme::default();
         let mut state = blank_state(VendorId::Anthropic);
         state.focus = Focus::Vendor(vendor_index(VendorId::Grok));
+        let mut hits = Vec::new();
 
         terminal
-            .draw(|f| render(f, f.area(), &mut state, &theme))
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
             .unwrap();
 
         let rendered = buffer_text(terminal.backend().buffer());
@@ -2625,8 +3227,9 @@ enabled = true
         // screen too (it renders after the provider rows).
         let mut state = blank_state(VendorId::Anthropic);
         state.focus = Focus::Save;
+        let mut hits = Vec::new();
         terminal
-            .draw(|f| render(f, f.area(), &mut state, &theme))
+            .draw(|f| render(f, f.area(), &mut state, &theme, &mut hits))
             .unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(
