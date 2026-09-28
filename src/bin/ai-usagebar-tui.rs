@@ -615,13 +615,10 @@ fn handle_mouse(app: &mut App, m: &event::MouseEvent) -> Option<MouseAction> {
         // a click anywhere else closes it without changing the radio.
         if s.picker.is_some() {
             let hit = app.hit.borrow();
-            let picked = hit
-                .settings_rows
-                .iter()
-                .find_map(|(row, rect)| match row {
-                    SettingsRow::Pick(i) if rect.contains(pos) => Some(*i),
-                    _ => None,
-                });
+            let picked = hit.settings_rows.iter().find_map(|(row, rect)| match row {
+                SettingsRow::Pick(i) if rect.contains(pos) => Some(*i),
+                _ => None,
+            });
             drop(hit);
             if let Some(i) = picked
                 && let Some(vendor) = s.primary_choices.get(i).copied()
@@ -660,19 +657,16 @@ fn handle_mouse(app: &mut App, m: &event::MouseEvent) -> Option<MouseAction> {
                     .iter()
                     .position(|v| *v == s.primary)
                     .unwrap_or(0);
-                s.picker = Some(PrimaryPicker {
-                    cursor,
-                    scroll: 0,
-                });
+                s.picker = Some(PrimaryPicker { cursor, scroll: 0 });
                 None
             }
             SettingsRow::Switch(focus, code, mods) => {
                 // A click on a value cell focuses that row and sends the
                 // cell's key: space toggles switches, ←/→ step the primary.
                 s.focus = focus;
-                Some(MouseAction::Settings(ai_usagebar::tui::settings::handle_key(
-                    s, code, mods,
-                )))
+                Some(MouseAction::Settings(
+                    ai_usagebar::tui::settings::handle_key(s, code, mods),
+                ))
             }
             SettingsRow::HintKey(code, mods) => Some(MouseAction::Settings(
                 ai_usagebar::tui::settings::handle_key(s, code, mods),
@@ -755,7 +749,9 @@ mod tests {
 
     /// Settings state with the provider switch at `index` focused.
     fn settings_focused_on_provider(index: usize) -> App {
-        use ai_usagebar::tui::settings::{Focus as SFocus, KeyInput, ProviderSwitch, SettingsState};
+        use ai_usagebar::tui::settings::{
+            Focus as SFocus, KeyInput, ProviderSwitch, SettingsState,
+        };
         use ai_usagebar::vendor::VendorId;
 
         let mut app = app_with_two();
@@ -830,7 +826,10 @@ mod tests {
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
-        assert!(app.settings.as_ref().unwrap().scroll > 0, "body must scroll");
+        assert!(
+            app.settings.as_ref().unwrap().scroll > 0,
+            "body must scroll"
+        );
 
         let assert_click_selects = |app: &mut App,
                                     terminal: &mut ratatui::Terminal<TestBackend>,
@@ -914,9 +913,9 @@ mod tests {
     fn clicking_the_settings_hint_close_link_closes_the_overlay() {
         use ai_usagebar::tui::settings::Action as SAction;
         use ai_usagebar::tui::view::draw as draw_view;
-        use ratatui::crossterm::event::KeyCode;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
+        use ratatui::crossterm::event::KeyCode;
 
         let mut app = settings_focused_on_provider(10);
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
@@ -933,9 +932,9 @@ mod tests {
     #[test]
     fn clicking_the_settings_hint_toggle_link_toggles_the_focused_provider() {
         use ai_usagebar::tui::view::draw as draw_view;
-        use ratatui::crossterm::event::KeyCode;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
+        use ratatui::crossterm::event::KeyCode;
 
         let moon = 10;
         let mut app = settings_focused_on_provider(moon);
@@ -990,7 +989,10 @@ mod tests {
         let _ = handle_mouse(&mut app, &click_at(focus_rect.x + 4, focus_rect.y));
         let state = app.settings.as_ref().unwrap();
         assert_eq!(state.focus, SFocus::Vendor(moon - 1));
-        assert!(!state.vendors[moon - 1].enabled, "label click must not toggle");
+        assert!(
+            !state.vendors[moon - 1].enabled,
+            "label click must not toggle"
+        );
 
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
 
@@ -1009,6 +1011,76 @@ mod tests {
         let state = app.settings.as_ref().unwrap();
         assert_eq!(state.focus, SFocus::Vendor(moon));
         assert!(state.vendors[moon].enabled, "own switch click toggles");
+    }
+
+    /// A long provider name ("GitHub Copilot" is 14 columns) pushes the value
+    /// cell right of the 11-column padding: clicking the name's tail — or the
+    /// empty space right of the row — must only focus the row, never toggle.
+    #[test]
+    fn clicking_a_long_provider_name_tail_only_focuses() {
+        use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
+        use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let copilot = VendorId::all()
+            .iter()
+            .position(|id| *id == VendorId::Copilot)
+            .expect("Copilot is a known vendor");
+        let mut app = settings_focused_on_provider(10);
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        let copilot_row = |app: &App| {
+            app.hit
+                .borrow()
+                .settings_rows
+                .iter()
+                .find_map(|(row, rect)| match row {
+                    SettingsRow::Focus(SFocus::Vendor(v)) if *v == copilot => Some(*rect),
+                    _ => None,
+                })
+                .unwrap()
+        };
+
+        // The last cell of "GitHub Copilot": 5-cell prefix + 13.
+        let focus_rect = copilot_row(&app);
+        let _ = handle_mouse(&mut app, &click_at(focus_rect.x + 5 + 13, focus_rect.y));
+        let state = app.settings.as_ref().unwrap();
+        assert_eq!(state.focus, SFocus::Vendor(copilot));
+        assert!(!state.vendors[copilot].enabled, "name tail must not toggle");
+
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // Unfocus Copilot, then click the first empty cell immediately after
+        // its unfocused `  off` segment. That cell belongs to the row focus
+        // target, not the narrower switch target.
+        app.settings.as_mut().unwrap().focus = SFocus::Vendor(10);
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+        let focus_rect = copilot_row(&app);
+        let first_empty_after_value = focus_rect.x + 5 + 14 + 2 + 3;
+        let _ = handle_mouse(&mut app, &click_at(first_empty_after_value, focus_rect.y));
+        let state = app.settings.as_ref().unwrap();
+        assert_eq!(state.focus, SFocus::Vendor(copilot));
+        assert!(
+            !state.vendors[copilot].enabled,
+            "empty cell after unfocused value must not toggle"
+        );
+
+        terminal.draw(|f| draw_view(f, &mut app)).unwrap();
+
+        // The far-right end of the row is empty space: focus only again.
+        let focus_rect = copilot_row(&app);
+        let _ = handle_mouse(
+            &mut app,
+            &click_at(focus_rect.x + focus_rect.width - 1, focus_rect.y),
+        );
+        let state = app.settings.as_ref().unwrap();
+        assert!(
+            !state.vendors[copilot].enabled,
+            "empty row tail must not toggle"
+        );
     }
 
     /// Rect of a recorded primary-radio arrow cell (◀ or ▶) by its key.
@@ -1036,9 +1108,9 @@ mod tests {
         use ai_usagebar::tui::settings::Focus as SFocus;
         use ai_usagebar::tui::view::draw as draw_view;
         use ai_usagebar::vendor::VendorId;
-        use ratatui::crossterm::event::KeyCode;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
+        use ratatui::crossterm::event::KeyCode;
 
         let mut app = settings_focused_on_provider(10);
         app.settings.as_mut().unwrap().focus = SFocus::Primary;
@@ -1058,10 +1130,7 @@ mod tests {
         // ◀ steps back: AnthropicApi → Anthropic.
         let prev = primary_arrow_rect(&app, KeyCode::Left);
         let _ = handle_mouse(&mut app, &click_at(prev.x, prev.y));
-        assert_eq!(
-            app.settings.as_ref().unwrap().primary,
-            VendorId::Anthropic
-        );
+        assert_eq!(app.settings.as_ref().unwrap().primary, VendorId::Anthropic);
         // The radio keeps keyboard focus through both clicks.
         assert_eq!(app.settings.as_ref().unwrap().focus, SFocus::Primary);
     }
@@ -1094,7 +1163,11 @@ mod tests {
         let _ = handle_mouse(&mut app, &click_at(name_cell.x + 2, name_cell.y));
         let picker = app.settings.as_ref().unwrap().picker;
         assert!(picker.is_some(), "name click opens the picker");
-        assert_eq!(picker.unwrap().cursor, 0, "cursor starts on the current pick");
+        assert_eq!(
+            picker.unwrap().cursor,
+            0,
+            "cursor starts on the current pick"
+        );
 
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
 
@@ -1158,7 +1231,11 @@ mod tests {
         let state = app.settings.as_ref().unwrap();
         assert!(state.picker.is_none(), "outside click closes the picker");
         assert_eq!(state.primary, VendorId::Anthropic, "no selection happened");
-        assert_eq!(state.focus, SFocus::Primary, "the closing click is consumed");
+        assert_eq!(
+            state.focus,
+            SFocus::Primary,
+            "the closing click is consumed"
+        );
     }
 
     #[test]
@@ -1230,10 +1307,8 @@ mod tests {
         app.context = Some(ai_usagebar::tui::context::ContextState::new(
             ai_usagebar::config::ContextLayout::Split,
         ));
-        app.hit.borrow_mut().footer_actions = vec![(
-            FooterAction::Quit,
-            ratatui::layout::Rect::new(0, 0, 10, 1),
-        )];
+        app.hit.borrow_mut().footer_actions =
+            vec![(FooterAction::Quit, ratatui::layout::Rect::new(0, 0, 10, 1))];
         let click = event::MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 0,

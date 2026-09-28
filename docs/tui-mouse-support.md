@@ -77,10 +77,13 @@ Pick the `SettingsRow` variant that matches the interaction:
 | `HintKey(KeyCode, KeyModifiers)` | hint-footer "link" | sends the key through `handle_key` (save/close/toggle/reveal) |
 
 Record during `render()` through the scroll-aware `row_at` helper; for a
-two-target row (label + value cell), push the value cell first. Geometry
-constants (`SWITCH_COL` = 5-cell prefix + 11-cell label; the primary radio's
-arrow columns) live next to `row_at` — if you change `provider_row` /
-`primary_line` rendering, change them together.
+two-target row (label + value cell), push the value cell first. Row geometry
+is computed from the same layout the renderer draws: `padded_label` /
+`switch_cell` mirror `provider_row` / `notify_enabled_line` (a 5-cell focus
+prefix, the label padded to at least 11 columns — longer names push the value
+right — then the value segment), and `primary_name_pad` pins the primary
+radio's arrow columns. If you change one of those renderers, update the
+helpers in the same commit.
 
 Key detail for value cells: the click focuses the row and then sends the
 key **through `handle_key`** rather than mutating state directly, so mouse and

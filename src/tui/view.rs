@@ -36,6 +36,16 @@ impl FooterBinding {
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // Hit targets are rebuilt every frame: a rect from an earlier layout
+    // would otherwise win first-match hit-testing after a scroll, resize or
+    // focus change. The nav/footer draws assign theirs; settings::render
+    // appends to settings_rows.
+    {
+        let mut hit = app.hit.borrow_mut();
+        hit.nav_entries.clear();
+        hit.footer_actions.clear();
+        hit.settings_rows.clear();
+    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -52,7 +62,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Settings still floats on top of everything. render() scrolls the
     // overlay body to follow focus, which needs the mutable state.
     let mut hit = app.hit.borrow_mut();
-    
+
     if app.settings.is_some() {
         let theme = app.theme.clone();
         if let Some(s) = app.settings.as_mut() {
@@ -238,13 +248,22 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(&list, inner);
 
     // Each list row is exactly one line; the Overview is row 0, tab i is
-    // row i+1. Record those rects for mouse hit-testing.
-    let mut hits: Vec<(NavTarget, ratatui::layout::Rect)> = vec![(
-        NavTarget::Overview,
-        ratatui::layout::Rect::new(inner.x, inner.y, inner.width, 1),
-    )];
+    // row i+1. SelectList truncates to inner.height without scrolling, so
+    // only the rows the panel renders get a click target — the rest would
+    // cover the border and the footer below.
+    let bottom = inner.y.saturating_add(inner.height);
+    let mut hits: Vec<(NavTarget, ratatui::layout::Rect)> = Vec::new();
+    if inner.y < bottom {
+        hits.push((
+            NavTarget::Overview,
+            ratatui::layout::Rect::new(inner.x, inner.y, inner.width, 1),
+        ));
+    }
     for (index, _) in app.tabs_meta.iter().enumerate() {
         let y = inner.y + 1 + index as u16;
+        if y >= bottom {
+            break;
+        }
         hits.push((
             NavTarget::Tab(index),
             ratatui::layout::Rect::new(inner.x, y, inner.width, 1),
@@ -807,6 +826,32 @@ mod tests {
     }
 
     #[test]
+    fn sidebar_hit_rects_skip_rows_the_panel_does_not_render() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // 8 rows: header 3 + body 4 + footer 1. The sidebar's inner height is
+        // 2 (body minus borders), so SelectList renders Overview and the
+        // first tab only; the second tab's row would otherwise sit on the
+        // border and steal footer clicks.
+        let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
+        app.overview = true;
+        let mut terminal = Terminal::new(TestBackend::new(160, 8)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+
+        let hit = app.hit.borrow();
+        assert_eq!(hit.nav_entries.len(), 2, "Overview and first tab only");
+        assert_eq!(hit.nav_entries[0].0, NavTarget::Overview);
+        assert_eq!(hit.nav_entries[1].0, NavTarget::Tab(0));
+        for (target, rect) in &hit.nav_entries {
+            assert!(
+                rect.y + rect.height <= 6,
+                "{target:?} escapes the sidebar's inner area: {rect:?}"
+            );
+        }
+    }
+
+    #[test]
     fn top_nav_records_hit_rects_in_entry_order() {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
@@ -978,5 +1023,53 @@ mod tests {
         for (_, rect) in &hit.settings_rows {
             assert!(rect.y + rect.height <= 12);
         }
+    }
+
+    #[test]
+    fn settings_hit_targets_do_not_accumulate_across_redraws() {
+        use crate::tui::settings::{Focus as SFocus, KeyCode, KeyModifiers, SettingsRow};
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = app_with(vec![TabState::Loading, TabState::Loading]);
+        app.settings = Some(settings_state()); // focus: Primary
+        let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let one_frame = app.hit.borrow().settings_rows.len();
+        assert!(one_frame > 0);
+
+        // A redraw with the same state replaces the frame's targets instead
+        // of appending another full set.
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        assert_eq!(
+            app.hit.borrow().settings_rows.len(),
+            one_frame,
+            "redraw must not accumulate hit targets"
+        );
+
+        // Moving focus swaps the hint links wholesale: Primary's "change
+        // vendor" link (Right) must not survive into the Vendor frame's
+        // rects, where a first-match hit-test would fire it instead of the
+        // rendered "toggle" link.
+        app.settings.as_mut().unwrap().focus = SFocus::Vendor(0);
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let hit = app.hit.borrow();
+        assert!(
+            !hit.settings_rows
+                .iter()
+                .any(|(row, _)| matches!(row, SettingsRow::HintKey(KeyCode::Right, _))),
+            "stale Primary hint link survived the redraw"
+        );
+        let toggles = hit
+            .settings_rows
+            .iter()
+            .filter(|(row, _)| {
+                matches!(
+                    row,
+                    SettingsRow::HintKey(KeyCode::Char(' '), KeyModifiers::NONE)
+                )
+            })
+            .count();
+        assert_eq!(toggles, 1, "exactly one frame's toggle link recorded");
     }
 }

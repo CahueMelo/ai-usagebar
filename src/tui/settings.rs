@@ -1200,11 +1200,6 @@ pub fn render(
         (y >= top && y < bottom).then_some(Rect::new(inner.x, y, inner.width, 1))
     };
 
-    // provider_row / notify_enabled_line render a 5-cell focus prefix plus an
-    // 11-cell label before the on/off value, so the switch cell starts at
-    // column 16 of the row on both focused and unfocused rows.
-    const SWITCH_COL: u16 = 16;
-
     // — Primary vendor + API keys header —
     let mut lines: Vec<Line> = vec![
         section_header("Primary vendor", "shown first on the bar / TUI", &bubble),
@@ -1243,7 +1238,7 @@ pub fn render(
         }
         lines.push(key_row(kv, &state.keys[i], focused, &bubble));
     }
-    
+
     lines.push(Line::from(""));
 
     // — Providers on/off (#244) —
@@ -1257,26 +1252,22 @@ pub fn render(
             enabled: false,
             dirty: false,
         });
+        let focused = state.focus == Focus::Vendor(i);
         if let Some(r) = row_at(lines.len()) {
             // The switch cell is pushed first so a click on the on/off value
-            // toggles the row instead of only focusing it.
+            // toggles the row instead of only focusing it. Its rect covers
+            // exactly the rendered value segment: not the name tail (a name
+            // past the 11-column padding pushes the value right) and not the
+            // empty space right of the row.
+            let (value_x, value_w) =
+                switch_cell(id.display_name(), switch_value(switch.enabled), focused);
             hits.push((
                 SettingsRow::Switch(Focus::Vendor(i), KeyCode::Char(' '), KeyModifiers::NONE),
-                Rect::new(
-                    r.x.saturating_add(SWITCH_COL),
-                    r.y,
-                    r.width.saturating_sub(SWITCH_COL),
-                    1,
-                ),
+                Rect::new(r.x.saturating_add(value_x), r.y, value_w, 1),
             ));
             hits.push((SettingsRow::Focus(Focus::Vendor(i)), r));
         }
-        lines.push(provider_row(
-            id,
-            switch,
-            state.focus == Focus::Vendor(i),
-            &bubble,
-        ));
+        lines.push(provider_row(id, switch, focused, &bubble));
     }
     lines.push(Line::from(""));
 
@@ -1287,18 +1278,14 @@ pub fn render(
         &bubble,
     ));
     if let Some(r) = row_at(lines.len()) {
+        let (value_x, value_w) = switch_cell(
+            "Quota alerts",
+            switch_value(state.notify_enabled),
+            state.focus == Focus::NotifyEnabled,
+        );
         hits.push((
-            SettingsRow::Switch(
-                Focus::NotifyEnabled,
-                KeyCode::Char(' '),
-                KeyModifiers::NONE,
-            ),
-            Rect::new(
-                r.x.saturating_add(SWITCH_COL),
-                r.y,
-                r.width.saturating_sub(SWITCH_COL),
-                1,
-            ),
+            SettingsRow::Switch(Focus::NotifyEnabled, KeyCode::Char(' '), KeyModifiers::NONE),
+            Rect::new(r.x.saturating_add(value_x), r.y, value_w, 1),
         ));
         hits.push((SettingsRow::Focus(Focus::NotifyEnabled), r));
     }
@@ -1329,9 +1316,9 @@ pub fn render(
     f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), chunks[0]);
 
     // Context-aware hint footer.
-/// One hint segment: the key label, its description, and the synthetic key a
-/// click sends through [`handle_key`] (`None` for pure key hints).
-type HintSegment<'a> = (&'a str, &'a str, Option<(KeyCode, KeyModifiers)>);
+    /// One hint segment: the key label, its description, and the synthetic key a
+    /// click sends through [`handle_key`] (`None` for pure key hints).
+    type HintSegment<'a> = (&'a str, &'a str, Option<(KeyCode, KeyModifiers)>);
 
     // Context-aware hint footer. Each segment is (key, description, click):
     // segments with a key payload are actionable "links" — clicking one sends
@@ -1340,32 +1327,64 @@ type HintSegment<'a> = (&'a str, &'a str, Option<(KeyCode, KeyModifiers)>);
     let segments: &[HintSegment] = match state.focus {
         Focus::Primary => &[
             ("↑↓/tab", "move", None),
-            ("←→", "change vendor", Some((KeyCode::Right, KeyModifiers::NONE))),
-            ("^S", "save", Some((KeyCode::Char('s'), KeyModifiers::CONTROL))),
+            (
+                "←→",
+                "change vendor",
+                Some((KeyCode::Right, KeyModifiers::NONE)),
+            ),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
             ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
         ],
         Focus::Key(_) => &[
             ("↑↓/tab", "move", None),
             ("type", "edit key", None),
-            ("^V", "reveal", Some((KeyCode::Char('v'), KeyModifiers::CONTROL))),
-            ("^S", "save", Some((KeyCode::Char('s'), KeyModifiers::CONTROL))),
+            (
+                "^V",
+                "reveal",
+                Some((KeyCode::Char('v'), KeyModifiers::CONTROL)),
+            ),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
             ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
         ],
         Focus::Vendor(_) | Focus::NotifyEnabled => &[
             ("↑↓/tab", "move", None),
-            ("←→/space", "toggle", Some((KeyCode::Char(' '), KeyModifiers::NONE))),
-            ("^S", "save", Some((KeyCode::Char('s'), KeyModifiers::CONTROL))),
+            (
+                "←→/space",
+                "toggle",
+                Some((KeyCode::Char(' '), KeyModifiers::NONE)),
+            ),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
             ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
         ],
         Focus::NotifyThreshold => &[
             ("↑↓/tab", "move", None),
             ("type", "digits 1-100", None),
-            ("^S", "save", Some((KeyCode::Char('s'), KeyModifiers::CONTROL))),
+            (
+                "^S",
+                "save",
+                Some((KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            ),
             ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
         ],
         Focus::Save => &[
             ("↑↓/tab", "move", None),
-            ("enter/^S", "save", Some((KeyCode::Enter, KeyModifiers::NONE))),
+            (
+                "enter/^S",
+                "save",
+                Some((KeyCode::Enter, KeyModifiers::NONE)),
+            ),
             ("esc", "close", Some((KeyCode::Esc, KeyModifiers::NONE))),
         ],
     };
@@ -1584,6 +1603,29 @@ fn value_text(input: &KeyInput, focused: bool) -> String {
     chars.into_iter().collect()
 }
 
+/// Labels in provider / notification rows are padded to at least 11 columns;
+/// the renderers and the mouse hit-test share this so a click lands where the
+/// value actually renders.
+fn padded_label(label: &str) -> String {
+    format!("{:<11}", label)
+}
+
+/// The on/off text a provider / quota switch renders.
+fn switch_value(enabled: bool) -> &'static str {
+    if enabled { "on" } else { "off" }
+}
+
+/// The value cell's offset and rendered width. Mirrors provider_row /
+/// notify_enabled_line: a 5-cell focus prefix, the padded label, then either
+/// `" ◀ on ▶ "` when focused or `"  on"` when unfocused. Names past 11
+/// columns push the cell right — never assume a fixed column.
+fn switch_cell(label: &str, value: &str, focused: bool) -> (u16, u16) {
+    let value_x = 5 + crate::display::text_width(&padded_label(label)) as u16;
+    let decoration_w = if focused { 6 } else { 2 };
+    let value_w = decoration_w + crate::display::text_width(value) as u16;
+    (value_x, value_w)
+}
+
 /// One `[<vendor>] enabled` row (#244): the shared display name plus an
 /// on/off value styled like the notification toggle.
 fn provider_row(
@@ -1592,8 +1634,8 @@ fn provider_row(
     focused: bool,
     theme: &BubbleTheme,
 ) -> Line<'static> {
-    let label = format!("{:<11}", id.display_name());
-    let value = if switch.enabled { "on" } else { "off" };
+    let label = padded_label(id.display_name());
+    let value = switch_value(switch.enabled);
     if focused {
         Line::from(vec![
             theme.span("   "),
@@ -1619,8 +1661,8 @@ fn provider_row(
 /// primary selector.
 fn notify_enabled_line(state: &SettingsState, theme: &BubbleTheme) -> Line<'static> {
     let focused = state.focus == Focus::NotifyEnabled;
-    let label = format!("{:<11}", "Quota alerts");
-    let value = if state.notify_enabled { "on" } else { "off" };
+    let label = padded_label("Quota alerts");
+    let value = switch_value(state.notify_enabled);
     if focused {
         Line::from(vec![
             theme.span("   "),
@@ -2960,24 +3002,33 @@ enabled = true
                 _ => None,
             })
         };
-        for i in 0..VendorId::all().len() {
+        for (i, id) in VendorId::all().iter().enumerate() {
             let focus_rect = focus_of(i).unwrap_or_else(|| panic!("vendor {i} has no focus row"));
             let switch = hits
                 .iter()
                 .find_map(|(row, rect)| match row {
-                    SettingsRow::Switch(Focus::Vendor(v), KeyCode::Char(' '), _)
-                        if *v == i =>
-                    {
+                    SettingsRow::Switch(Focus::Vendor(v), KeyCode::Char(' '), _) if *v == i => {
                         Some(*rect)
                     }
                     _ => None,
                 })
                 .unwrap_or_else(|| panic!("vendor {i} has no switch cell"));
-            // The switch cell is the right part of the row: same y and right
-            // edge, starting after the 5-cell prefix + 11-cell label.
+            // The value cell starts after the 5-cell prefix + the padded
+            // label (names past 11 columns push it right) and covers only
+            // the rendered value — never the name tail or the trailing
+            // empty row space.
+            let expected_x =
+                5 + crate::display::text_width(&format!("{:<11}", id.display_name())) as u16;
+            let value_len = if state.vendors[i].enabled { 2 } else { 3 }; // "on" / "off"
+            let focused = state.focus == Focus::Vendor(i);
             assert_eq!(switch.y, focus_rect.y);
-            assert_eq!(switch.x + switch.width, focus_rect.x + focus_rect.width);
-            assert!(switch.x > focus_rect.x);
+            assert_eq!(switch.x, focus_rect.x + expected_x);
+            assert_eq!(
+                switch.width,
+                (if focused { 6 } else { 2 }) + value_len,
+                "rendered value segment"
+            );
+            assert!(switch.x + switch.width <= focus_rect.x + focus_rect.width);
         }
         // The quota-alerts row has a switch cell as well.
         assert!(hits.iter().any(|(row, _)| matches!(
@@ -3081,7 +3132,10 @@ enabled = true
         let count = s.primary_choices.len();
         assert!(count > 1);
 
-        assert_eq!(handle_key(&mut s, KeyCode::Down, KeyModifiers::NONE), Action::Continue);
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Down, KeyModifiers::NONE),
+            Action::Continue
+        );
         assert_eq!(s.picker.as_ref().unwrap().cursor, 1);
         // Wraps at the top.
         handle_key(&mut s, KeyCode::Up, KeyModifiers::NONE);
@@ -3090,7 +3144,10 @@ enabled = true
 
         // Enter selects the cursor's choice and closes the popup.
         let expected = s.primary_choices[s.picker.as_ref().unwrap().cursor];
-        assert_eq!(handle_key(&mut s, KeyCode::Enter, KeyModifiers::NONE), Action::Continue);
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Enter, KeyModifiers::NONE),
+            Action::Continue
+        );
         assert_eq!(s.primary, expected);
         assert!(s.picker.is_none());
 
@@ -3100,9 +3157,15 @@ enabled = true
             cursor: 2,
             scroll: 0,
         });
-        assert_eq!(handle_key(&mut s, KeyCode::Esc, KeyModifiers::NONE), Action::Continue);
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Esc, KeyModifiers::NONE),
+            Action::Continue
+        );
         assert!(s.picker.is_none());
-        assert_eq!(handle_key(&mut s, KeyCode::Esc, KeyModifiers::NONE), Action::Close);
+        assert_eq!(
+            handle_key(&mut s, KeyCode::Esc, KeyModifiers::NONE),
+            Action::Close
+        );
     }
 
     /// The open picker records one click row per choice.
