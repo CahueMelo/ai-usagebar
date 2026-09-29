@@ -104,6 +104,20 @@ enum ReportSection {
     Text {
         label: String,
         value: String,
+        /// Spend behind `value`, in USD cents. Present on Cursor's On-Demand
+        /// row so a frontend can meter that prepaid cap without parsing the
+        /// formatted `$spent / $cap` string. Omitted for every other text row.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        used_cents: Option<i64>,
+        /// Prepaid cap in USD cents. Present only when the cap is positive.
+        /// Spend with no cap stays a plain amount in `value`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        limit_cents: Option<i64>,
+        /// How much of `limit_cents` is already used, rounded half up the same
+        /// way a bar percentage is. Above 100 when spend passes the cap.
+        /// Present only together with a positive cap.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        percent: Option<u16>,
     },
     Block {
         label: String,
@@ -230,6 +244,23 @@ fn entry_from_state_with_config(
     entry
 }
 
+/// Consumed percent of a prepaid cap, rounded half up for a non-negative
+/// spend. `None` when the cap is not positive. The result is not clamped at
+/// 100: spend past the cap is a real percentage, and the bar shows it.
+///
+/// Half up matches `Math.round` on the non-negative integers a frontend would
+/// divide itself. A tie (`.5`) only happens when the cap is even, so adding
+/// `limit / 2` before the truncating division is the same rounding.
+fn consumed_percent(used: i64, limit: i64) -> Option<u16> {
+    if limit <= 0 {
+        return None;
+    }
+    let used = i128::from(used.max(0));
+    let limit = i128::from(limit);
+    let pct = (used * 100 + limit / 2) / limit;
+    Some(u16::try_from(pct).unwrap_or(u16::MAX))
+}
+
 fn entry_from_state(tab: &TabId, state: &TabState, now: chrono::DateTime<Utc>) -> Entry {
     let mut entry = Entry {
         id: tab_id(tab),
@@ -292,7 +323,22 @@ fn entry_from_state(tab: &TabId, state: &TabState, now: chrono::DateTime<Utc>) -
                 });
             }
             Section::Text { label, value } => {
-                entry.sections.push(ReportSection::Text { label, value });
+                // A cap is only meaningful next to the spend it meters, and
+                // only when that cap is positive. Anything else stays off
+                // the JSON.
+                let used_cents = projected.used_cents;
+                let limit_cents = used_cents.and(projected.limit_cents.filter(|limit| *limit > 0));
+                let percent = match (used_cents, limit_cents) {
+                    (Some(used), Some(limit)) => consumed_percent(used, limit),
+                    _ => None,
+                };
+                entry.sections.push(ReportSection::Text {
+                    label,
+                    value,
+                    used_cents,
+                    limit_cents,
+                    percent,
+                });
             }
             Section::Block { label, body } => {
                 entry.sections.push(ReportSection::Block { label, body });
@@ -391,6 +437,9 @@ fn context_session_sections(scan: &ContextScan) -> Vec<ReportSection> {
         sections.push(ReportSection::Text {
             label: String::new(),
             value: format!("… and {} more sessions", scan.sessions.len() - shown),
+            used_cents: None,
+            limit_cents: None,
+            percent: None,
         });
     }
     sections
@@ -697,7 +746,7 @@ fn render_text(entries: &[Entry]) -> String {
                         body.push_str(&format!("  {label}  {value}   {detail}\n"));
                     }
                 }
-                ReportSection::Text { label, value } => {
+                ReportSection::Text { label, value, .. } => {
                     if label.is_empty() {
                         body.push_str(&format!("  {}\n", value.trim_start()));
                     } else if value.is_empty() {
@@ -727,7 +776,7 @@ mod tests {
     use super::*;
     use crate::tui::app::ReadyTab;
     use crate::usage::{
-        DeepseekSnapshot, KimiSnapshot, KiroSnapshot, OpenAiSnapshot, OpenAiSource,
+        CursorSnapshot, DeepseekSnapshot, KimiSnapshot, KiroSnapshot, OpenAiSnapshot, OpenAiSource,
         OpenRouterSnapshot, ResetCredit, ResetCredits, SuperGrokPeriod, SuperGrokSnapshot,
         VendorSnapshot,
     };
@@ -1679,6 +1728,9 @@ mod tests {
                     ReportSection::Text {
                         label: "Resets".into(),
                         value: "in 9d".into(),
+                        used_cents: None,
+                        limit_cents: None,
+                        percent: None,
                     },
                     ReportSection::Block {
                         label: "Usage by period".into(),
@@ -1752,7 +1804,13 @@ mod tests {
         let projected = entry_from_state(&TabId::vendor(VendorId::Deepseek), &state, Utc::now());
         assert!(projected.sections.iter().any(|section| matches!(
             section,
-            ReportSection::Text { label, value } if label == "Balance" && value == "$12.50"
+            ReportSection::Text {
+                label,
+                value,
+                used_cents: None,
+                limit_cents: None,
+                percent: None,
+            } if label == "Balance" && value == "$12.50"
         )));
         assert!(
             !projected
@@ -1760,6 +1818,106 @@ mod tests {
                 .iter()
                 .any(|section| matches!(section, ReportSection::Metric { .. }))
         );
+    }
+
+    /// Half up, including the exact `.5` tie, and no clamp at 100. These are
+    /// the figures the Omarchy chip shows, so a frontend that trusts `percent`
+    /// and one that divides the cents must agree.
+    #[test]
+    fn consumed_percent_rounds_half_up_and_keeps_overrun() {
+        assert_eq!(consumed_percent(0, 500), Some(0));
+        assert_eq!(consumed_percent(125, 500), Some(25));
+        assert_eq!(consumed_percent(480, 500), Some(96));
+        assert_eq!(consumed_percent(1785, 35_000), Some(5));
+        assert_eq!(consumed_percent(1, 2), Some(50));
+        assert_eq!(consumed_percent(1, 8), Some(13));
+        assert_eq!(consumed_percent(600, 500), Some(120));
+        assert_eq!(consumed_percent(-10, 500), Some(0));
+        assert_eq!(consumed_percent(1, 0), None);
+        assert_eq!(consumed_percent(1, -5), None);
+    }
+
+    #[test]
+    fn cursor_on_demand_row_exports_cents_and_percent() {
+        let state = TabState::Ready(Box::new(ReadyTab {
+            snapshot: VendorSnapshot::Cursor(CursorSnapshot {
+                plan: "Pro".into(),
+                auto_pct: 35,
+                api_pct: 7,
+                total_pct: 35,
+                unlimited: false,
+                on_demand_enabled: true,
+                on_demand_used_cents: Some(125),
+                on_demand_limit_cents: Some(500),
+                reset_at: None,
+                cycle_start: None,
+            }),
+            stale: false,
+            last_error: None,
+            fetched_at: None,
+            display: Default::default(),
+        }));
+        let projected = entry_from_state(&TabId::vendor(VendorId::Cursor), &state, Utc::now());
+        assert!(projected.sections.iter().any(|section| matches!(
+            section,
+            ReportSection::Text {
+                label,
+                value,
+                used_cents: Some(125),
+                limit_cents: Some(500),
+                percent: Some(25),
+            } if label == "On-Demand" && value == "$1.25 / $5.00"
+        )));
+        let rendered = render_json_for_primary(std::slice::from_ref(&projected), None);
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        let row = value["entries"][0]["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|section| section["label"] == "On-Demand")
+            .unwrap();
+        assert_eq!(row["type"], "text");
+        assert_eq!(row["value"], "$1.25 / $5.00");
+        assert_eq!(row["used_cents"], 125);
+        assert_eq!(row["limit_cents"], 500);
+        assert_eq!(row["percent"], 25);
+        // The text report still prints the formatted pair. The cents are a
+        // JSON contract, not a second way to spell the TUI line.
+        let text = render_text(std::slice::from_ref(&projected));
+        assert!(text.contains("$1.25 / $5.00"), "{text}");
+
+        // Spend with no cap exports the cents and nothing to divide by.
+        let state = TabState::Ready(Box::new(ReadyTab {
+            snapshot: VendorSnapshot::Cursor(CursorSnapshot {
+                plan: "Pro".into(),
+                auto_pct: 35,
+                api_pct: 7,
+                total_pct: 35,
+                unlimited: false,
+                on_demand_enabled: true,
+                on_demand_used_cents: Some(1785),
+                on_demand_limit_cents: None,
+                reset_at: None,
+                cycle_start: None,
+            }),
+            stale: false,
+            last_error: None,
+            fetched_at: None,
+            display: Default::default(),
+        }));
+        let projected = entry_from_state(&TabId::vendor(VendorId::Cursor), &state, Utc::now());
+        let rendered = render_json_for_primary(std::slice::from_ref(&projected), None);
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        let row = value["entries"][0]["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|section| section["label"] == "On-Demand")
+            .unwrap();
+        assert_eq!(row["value"], "$17.85");
+        assert_eq!(row["used_cents"], 1785);
+        assert!(row.get("limit_cents").is_none());
+        assert!(row.get("percent").is_none());
     }
 
     /// Every metric declares which of its two numbers goes on the bar, in both
