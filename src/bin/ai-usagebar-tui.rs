@@ -819,10 +819,10 @@ mod tests {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        // Moonshot sits mid-provider-list (index 10); on a short terminal the
+        // Moonshot sits mid-provider-list (index 11); on a short terminal the
         // overlay body scrolls to follow the focused switch, which is where
         // unscrolled hit rects made neighbor clicks land on the wrong row.
-        let moon = 10;
+        let moon = 11;
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -863,7 +863,7 @@ mod tests {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let moon = 10;
+        let moon = 11;
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
