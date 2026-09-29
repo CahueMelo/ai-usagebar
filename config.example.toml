@@ -453,8 +453,9 @@ enabled = false
 # Override the cursor-agent CLI's own login file, tried only when db_path
 # does not exist. Leave commented out to use the platform default:
 #   Linux:   ~/.config/cursor/auth.json
-#   macOS:   ~/Library/Application Support/cursor/auth.json
-#   Windows: %APPDATA%\cursor\auth.json
+#   macOS:   ~/.cursor/auth.json (the CLI keeps its session in the Keychain
+#            there; the Keychain is read when this file is absent too)
+#   Windows: %APPDATA%\Cursor\auth.json
 # agent_auth_path = "/home/you/.config/cursor/auth.json"
 
 [minimax]

@@ -9,6 +9,20 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cursor is detected from `cursor-agent` alone on macOS.** The CLI keeps its
+  login in the login Keychain (`cursor-access-token`, account `cursor-user`)
+  rather than in an `auth.json`, so a Mac with the CLI and no desktop IDE had
+  neither credential source and Cursor read as signed out. The Keychain is now
+  the third source, after the IDE's `state.vscdb` and the agent's `auth.json`,
+  and is only read when the IDE database does not exist and the agent path is
+  the default one.
+  The agent file's default location on macOS was also wrong: `cursor-agent`
+  writes `~/.cursor/auth.json`, not `~/Library/Application Support/cursor/`, so
+  the file fallback could never be found there. The default now follows the
+  CLI's own per-OS path (Linux and Windows are unchanged).
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed
