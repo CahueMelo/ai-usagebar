@@ -11,6 +11,16 @@ use crate::display::{sanitize_untrusted_line, sanitize_untrusted_path};
 use crate::error::{AppError, Result};
 use crate::widget::cli::AccountAction;
 
+/// An error or note as one terminal-safe line.
+///
+/// Every message `account` prints reaches the terminal verbatim, and an
+/// `AppError::Other` is whatever text its constructor assembled — a path, an
+/// account label, a subprocess's stderr. Render through this at the `println!`
+/// rather than trusting each constructor to have remembered.
+fn printable(value: &dyn std::fmt::Display) -> String {
+    sanitize_untrusted_line(&value.to_string())
+}
+
 struct Registered {
     config_path: PathBuf,
     credential_file: PathBuf,
@@ -225,7 +235,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
     let paths = match Paths::for_data_dir(data_dir.to_path_buf(), &config.anthropic) {
         Ok(paths) => paths,
         Err(error) => {
-            eprintln!("error: {}", sanitize_untrusted_line(&error.to_string()));
+            eprintln!("error: {}", printable(&error));
             return 1;
         }
     };
@@ -267,7 +277,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
         ) {
             Ok(lock) => Some(lock),
             Err(error) => {
-                eprintln!("error: {}", sanitize_untrusted_line(&error.to_string()));
+                eprintln!("error: {}", printable(&error));
                 return 1;
             }
         }
@@ -278,7 +288,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
     let (account_uuid, org_uuid) = match claude_desktop::history_target(&paths) {
         Ok(target) => target,
         Err(error) => {
-            eprintln!("error: {}", sanitize_untrusted_line(&error.to_string()));
+            eprintln!("error: {}", printable(&error));
             return 1;
         }
     };
@@ -332,7 +342,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
     let plan = match claude_desktop::plan_history_merge(&paths) {
         Ok(plan) => plan,
         Err(error) => {
-            eprintln!("error: {}", sanitize_untrusted_line(&error.to_string()));
+            eprintln!("error: {}", printable(&error));
             return 1;
         }
     };
@@ -381,7 +391,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
             0
         }
         Err(error) => {
-            eprintln!("error: {}", sanitize_untrusted_line(&error.to_string()));
+            eprintln!("error: {}", printable(&error));
             1
         }
     };
@@ -407,7 +417,10 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
 /// status can safely fall back to the conventional account locations.
 fn config_or_default() -> Config {
     Config::load().unwrap_or_else(|error| {
-        eprintln!("ai-usagebar account: using defaults, config.toml did not parse: {error}");
+        eprintln!(
+            "ai-usagebar account: using defaults, config.toml did not parse: {}",
+            printable(&error)
+        );
         Config::default()
     })
 }
@@ -738,19 +751,13 @@ fn active_tag(value: &serde_json::Value) -> &'static str {
 fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
     let shown = sanitize_untrusted_line(label);
     if let Err(error) = crate::config::validate_account_label(label) {
-        eprintln!(
-            "ai-usagebar account add: {}",
-            sanitize_untrusted_line(&error.to_string())
-        );
+        eprintln!("ai-usagebar account add: {}", printable(&error));
         return 1;
     }
     let config = match config_for_mutation(Config::load()) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!(
-                "ai-usagebar account add: {}",
-                sanitize_untrusted_line(&error.to_string())
-            );
+            eprintln!("ai-usagebar account add: {}", printable(&error));
             return 1;
         }
     };
@@ -764,10 +771,7 @@ fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
             return 1;
         }
         Err(error) => {
-            eprintln!(
-                "ai-usagebar account add: {}",
-                sanitize_untrusted_line(&error.to_string())
-            );
+            eprintln!("ai-usagebar account add: {}", printable(&error));
             return 1;
         }
     };
@@ -809,11 +813,11 @@ fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
         &mut notes,
     );
     for note in &notes {
-        println!("  note: {note}");
+        println!("  note: {}", printable(&note));
     }
     match outcome {
         Err(error) => {
-            eprintln!("ai-usagebar account add: {error}");
+            eprintln!("ai-usagebar account add: {}", printable(&error));
             1
         }
         Ok(claude_desktop::capture::CaptureOutcome::TimedOut) => {
@@ -868,7 +872,7 @@ fn switch(args: &SwitchArgs) -> i32 {
     let config = match config_for_mutation(Config::load()) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("ai-usagebar account switch: {error}");
+            eprintln!("ai-usagebar account switch: {}", printable(&error));
             return 1;
         }
     };
@@ -887,7 +891,7 @@ fn switch(args: &SwitchArgs) -> i32 {
             Ok(true) => acted = true,
             Ok(false) => {}
             Err(error) => {
-                eprintln!("ai-usagebar account switch: {error}");
+                eprintln!("ai-usagebar account switch: {}", printable(&error));
                 failed = true;
             }
         }
@@ -900,7 +904,7 @@ fn switch(args: &SwitchArgs) -> i32 {
             Ok(true) => acted = true,
             Ok(false) => {}
             Err(error) => {
-                eprintln!("ai-usagebar account switch: {error}");
+                eprintln!("ai-usagebar account switch: {}", printable(&error));
                 failed = true;
             }
         }
@@ -941,7 +945,7 @@ fn switch_desktop(config: &Config, args: &SwitchArgs, tolerant: bool) -> Result<
     let plan = match claude_desktop::plan_switch(&paths, args.label, args.opts.clone()) {
         Ok(plan) => plan,
         Err(error) if tolerant => {
-            println!("Claude Desktop   skipped: {error}");
+            println!("Claude Desktop   skipped: {}", printable(&error));
             return Ok(false);
         }
         Err(error) => return Err(error),
@@ -969,7 +973,7 @@ fn switch_desktop(config: &Config, args: &SwitchArgs, tolerant: bool) -> Result<
 
     let notes = claude_desktop::apply_switch(&paths, &plan, &claude_desktop::app::DesktopApp)?;
     for note in &notes {
-        println!("  note: {note}");
+        println!("  note: {}", printable(&note));
     }
     println!(
         "  switched — the app is reopening as {:?}.",
@@ -1315,7 +1319,7 @@ fn add(label: &str, login: bool) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not add {shown:?}: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             return 1;
         }
@@ -1397,7 +1401,8 @@ fn add(label: &str, login: bool) -> i32 {
             // clobber config edits made while the interactive command ran.
             if let Err(error) = restamp_config(&registration.config_path) {
                 eprintln!(
-                    "warning: login finished, but config.toml could not be touched for live reload: {error}"
+                    "warning: login finished, but config.toml could not be touched for live reload: {}",
+                    printable(&error)
                 );
             }
             println!();
@@ -1539,10 +1544,7 @@ fn switch_codex(config: &Config, args: &SwitchArgs) -> i32 {
     let outcome = match outcome {
         Ok(outcome) => outcome,
         Err(error) => {
-            eprintln!(
-                "ai-usagebar account switch: {}",
-                sanitize_untrusted_line(&error.to_string())
-            );
+            eprintln!("ai-usagebar account switch: {}", printable(&error));
             return 1;
         }
     };
@@ -1599,7 +1601,7 @@ fn add_codex(label: &str, login: bool, adopt: bool) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not add Codex account {shown:?}: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             return 1;
         }
@@ -1648,7 +1650,7 @@ fn add_codex(label: &str, login: bool, adopt: bool) -> i32 {
             Err(error) => {
                 eprintln!(
                     "ai-usagebar account: could not adopt the current Codex login: {}",
-                    sanitize_untrusted_line(&error.to_string())
+                    printable(&error)
                 );
                 1
             }
@@ -1685,7 +1687,7 @@ fn add_codex(label: &str, login: bool, adopt: bool) -> i32 {
             1
         }
         Err(error) => {
-            eprintln!("could not start `codex login`: {error}");
+            eprintln!("could not start `codex login`: {}", printable(&error));
             1
         }
     }
@@ -1747,7 +1749,7 @@ fn adopt_claude(label: &str) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not add {shown:?}: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             return 1;
         }
@@ -1782,7 +1784,7 @@ fn adopt_claude(label: &str) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not adopt the current Claude login: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             1
         }
@@ -2326,44 +2328,40 @@ mod tests {
         assert!(!super::ps_shows_user_data_dir(ps, &[dir]));
     }
 
-    /// CLI output that reaches the terminal verbatim must sanitize paths and
-    /// lines with `sanitize_untrusted_path` / `sanitize_untrusted_line` rather
-    /// than bare `.display()`.
+    /// `account` prints reach the terminal verbatim, so a print must not take
+    /// a path from `Path::display` — it escapes nothing — nor an error or note
+    /// interpolated bare, whose text is whatever its constructor assembled.
+    /// Paths go through `sanitize_untrusted_path`, messages through `printable`.
+    ///
+    /// Scoped to prints: a bare `.display()` is the correct call when the
+    /// string is read by a program, as with the `--user-data-dir=` needle.
     #[test]
     fn no_account_print_interpolates_raw_display() {
         let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/account.rs");
         let source = std::fs::read_to_string(&file).expect("readable account.rs");
         let body = crate::guard::production_code(&source);
-        let mut sites = Vec::new();
-        for target in ["println!(", "eprintln!("] {
-            let mut rest = body.as_str();
-            while let Some(at) = rest.find(target) {
-                let call = &rest[at..];
-                let mut depth = 0usize;
-                let mut end = call.len();
-                for (i, ch) in call.char_indices() {
-                    match ch {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = i;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                if call[..end].contains(".display()") {
-                    sites.push(call[..end].replace('\n', " "));
-                }
-                rest = &call[end.max(1)..];
-            }
-        }
+        // `println!(` also covers `eprintln!(`, and `print!(` covers `eprint!(`.
+        let sites: Vec<String> = ["println!(", "print!("]
+            .into_iter()
+            .flat_map(|opener| crate::guard::calls(&body, opener))
+            .filter(|call| {
+                [".display()", "{error}", "{note}"]
+                    .iter()
+                    .any(|needle| call.contains(needle))
+            })
+            .map(|call| call.replace('\n', " "))
+            .collect();
         assert!(
             sites.is_empty(),
             "an account CLI print reaches the terminal verbatim; render its path with \
-             `sanitize_untrusted_path`. Found: {sites:#?}"
+             `sanitize_untrusted_path` and its error or note with `printable`. \
+             Found: {sites:#?}"
         );
+    }
+
+    #[test]
+    fn printable_renders_an_error_as_one_terminal_safe_line() {
+        let error = AppError::Other("bad \x1b[2Kpath\nRESTORED: 0 files\u{202e}".to_string());
+        assert_eq!(printable(&error), "bad [2Kpath RESTORED: 0 files");
     }
 }

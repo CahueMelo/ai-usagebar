@@ -1859,29 +1859,12 @@ mod tests {
         for file in crate::guard::rs_files_in("src") {
             let source = std::fs::read_to_string(&file).expect("readable module");
             let body = crate::guard::production_code(&source);
-            let mut rest = body.as_str();
-            while let Some(at) = rest.find("notes.push(") {
-                let call = &rest[at..];
-                let mut depth = 0usize;
-                let mut end = call.len();
-                for (i, ch) in call.char_indices() {
-                    match ch {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = i;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                if call[..end].contains(".display()") {
-                    sites.push(format!("{}: {}", file.display(), &call[..end]));
-                }
-                rest = &call[end.max(1)..];
-            }
+            sites.extend(
+                crate::guard::calls(&body, "notes.push(")
+                    .into_iter()
+                    .filter(|call| call.contains(".display()"))
+                    .map(|call| format!("{}: {call}", file.display())),
+            );
         }
         assert!(
             sites.is_empty(),

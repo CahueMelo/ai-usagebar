@@ -16,8 +16,10 @@ Each release is also published at
   previously interpolated raw `.display()` paths and unsanitized labels directly
   into `println!` and `eprintln!`, violating the project invariant that untrusted
   text is sanitized at the sink and risking ANSI escape sequence injection into
-  the terminal. All user-visible terminal prints now route through
-  `sanitize_untrusted_path` and `sanitize_untrusted_line`.
+  the terminal. Paths now route through `sanitize_untrusted_path`; errors,
+  capture notes and config parse messages through one `printable` helper. A
+  guard test fails on any `account` print that interpolates `.display()`,
+  `{error}` or `{note}` bare.
 - **`account merge-history` synchronizes under `account_switch_lock`.**
   Running history merges now acquires the profile switch lock before staging
   and merging, preventing race conditions and potential profile corruption
