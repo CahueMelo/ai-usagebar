@@ -1170,7 +1170,7 @@ After saving:
 ## Theming
 
 - One Dark palette by default.
-- Auto-merges with the active Omarchy theme at `~/.config/omarchy/current/theme/colors.toml`.
+- Auto-merges with the active Omarchy theme at `~/.local/state/omarchy/current/theme/colors.toml` (the older `~/.config/omarchy/current/theme/colors.toml` location is still read when that file is absent).
 - Per-color overrides: `--color-low`, `--color-mid`, `--color-high`, `--color-critical` (claudebar-compatible).
 
 ## Changelog
