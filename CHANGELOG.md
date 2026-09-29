@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **The update banner says "Updating…" once.** Clicking Install put the same
+  "Updating…" on the button and in the sentence above it, and the download
+  and install that followed repeated each step in both places too. Progress
+  now shows on the button only; the sentence keeps naming the release
+  ("AI Usage vX.Y.Z is ready to install.") until it is done, and a failure
+  still explains itself there.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed

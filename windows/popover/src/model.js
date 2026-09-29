@@ -1656,6 +1656,16 @@ export function updateMessage(update, locale) {
   }
 }
 
+// The banner's sentence. Progress (checking, downloading, installing, or the
+// click that starts it) is the button's to say; repeating it in the sentence
+// put the same "Updating…" twice on one card. While busy the sentence keeps
+// naming the release, and a failure still explains itself here.
+export function bannerMessage(update, locale) {
+  if (!update) return "";
+  const busy = update.state === "checking" || update.state === "downloading" || update.state === "installing";
+  return updateMessage(busy ? Object.assign({}, update, { state: "available" }) : update, locale);
+}
+
 // The dashboard shows an update banner while the host has a release in hand.
 // A check in flight, or a check that failed before finding one, belongs to the
 // update dialog: neither is something to install.

@@ -76,6 +76,7 @@ import {
   updateModeLabel,
   updateAction,
   updateMessage,
+  bannerMessage,
   optionsMenuLabels,
   menuAction,
 } from './src/model.js';
@@ -958,6 +959,14 @@ assert.equal(resetAlternate(badStampRow, 'exact', resetNow, utc), '');
   assert.equal(updateMessage(withUpdate('failed', { error: 'offline' }).update), "Couldn't update: offline");
   assert.equal(updateMessage(withUpdate('failed', { error: 'HTTP 503', version: '' }).update), "Couldn't check: HTTP 503");
   assert.equal(updateMessage(null), '');
+  // The banner leaves progress to its button: the sentence keeps naming the release.
+  for (const state of ['checking', 'downloading', 'installing']) {
+    const msg = bannerMessage(withUpdate(state, { installable: true }).update);
+    assert.equal(msg, 'AI Usage v1.11.0 is ready to install.', state);
+    assert.doesNotMatch(msg, /Updating|Downloading|Installing|Looking/, state);
+  }
+  assert.equal(bannerMessage(withUpdate('failed', { error: 'offline' }).update), "Couldn't update: offline");
+  assert.equal(bannerMessage(null), '');
   assert.equal(parseHostPayload({ update: { state: 'available', installable: 'yes' } }).update.installable, false);
   assert.equal(parseHostPayload({ update: { state: 'available', installable: true } }).update.installable, true);
 
