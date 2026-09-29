@@ -72,6 +72,11 @@ assert.match(panelSource, /Model\.normalizeBarWindow\(setting\("barWindow",\s*"a
 assert.match(panelSource, /Model\.headline\(entry,\s*barWindow\)/);
 assert.match(panelSource, /Model\.headline\(item,\s*barWindow\)/);
 assert.match(panelSource, /Model\.isAlarming\(item\)/);
+// A failed or cached refresh alone cannot activate the bar, but a report that
+// never arrived has nothing else to show there.
+assert.match(panelSource, /readonly property bool reportMissing:\s*loadError\s*!==\s*""\s*&&\s*entries\.length\s*===\s*0/);
+assert.match(panelSource, /\(showAll\s*\?\s*shownAnyAlarming\(\)\s*:\s*entryAlarming\)[\s\S]{0,40}reportMissing/);
+assert.doesNotMatch(panelSource, /chipAlarm\s*=\s*rows\[i\]\.status\s*===\s*"error"/);
 assert.match(panelSource, /function shownAnyAlarming\(\)/);
 assert.doesNotMatch(panelSource, /Model\.anyAlarming\(visibleEntries\)/);
 assert.doesNotMatch(panelSource, /autoSummary/);
@@ -379,8 +384,12 @@ assert.equal(model.providerShort({id: 'x', short_name: '<b>x</b>'}), '‹b›x�
 
 assert.equal(model.headline(parsed.entries[0]).text, '29%');
 assert.equal(model.headline(parsed.entries[1]).severity, 'critical');
-assert.equal(model.isAlarming(parsed.entries[0]), true); // stale
-assert.equal(model.isAlarming(parsed.entries[1]), true); // critical
+assert.equal(model.isAlarming(parsed.entries[0]), false); // cached, below critical
+assert.equal(model.barChips(parsed.entries, parsed.entries[0], false, true, false, false, false, false)[0].alarming, false);
+const failed = model.parseReport(JSON.stringify({entries: [{id: 'openai', status: 'error', error: 'Unavailable', sections: []}]})).entries[0];
+assert.equal(model.isAlarming(failed), false);
+assert.equal(model.barChips([failed], failed, false, true, false, false, false, false)[0].alarming, false);
+assert.equal(model.isAlarming(parsed.entries[1]), true); // critical usage still alerts
 // Reset-row fixtures are built from *local* calendar components, not UTC
 // strings, so every expectation below is a literal that holds in any
 // timezone the panel might run in. Deriving the expected clock from the same

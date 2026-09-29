@@ -66,8 +66,11 @@ Panel {
   readonly property var entrySections: entry ? Model.groupedSections(entry.sections) : []
   readonly property bool filterMiss: configuredProvider !== "" && entries.length > 0 && visibleEntries.length === 0
   readonly property bool entryAlarming: shownAlarming()
-  readonly property bool alarming: loadError !== "" || filterMiss
-    || (showAll ? shownAnyAlarming() : entryAlarming)
+  // A cached or failed provider response stays a status line, but a report
+  // that never arrived has nothing else to show on the bar.
+  readonly property bool reportMissing: loadError !== "" && entries.length === 0
+  readonly property bool alarming: (showAll ? shownAnyAlarming() : entryAlarming)
+    || reportMissing
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
@@ -212,7 +215,6 @@ Panel {
 
   function entryIsAlarming(item) {
     if (!item) return false
-    if (item.status === "error" || item.stale === true) return true
     if (isCursorEntry(item) && typeof Model.cursorDualHeadline === "function") {
       var dual = Model.cursorDualHeadline(item, cursorPoolFlags())
       if (dual) return dual.severity === "critical"
@@ -405,7 +407,7 @@ Panel {
       var chipAlarm = chip.alarming
       if (pools.severity === "low" || pools.severity === "mid" || pools.severity === "high"
           || pools.severity === "critical") {
-        chipAlarm = rows[i].status === "error" || rows[i].stale === true || pools.severity === "critical"
+        chipAlarm = pools.severity === "critical"
       }
       next.push({
         brand: chip.brand,

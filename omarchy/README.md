@@ -60,8 +60,11 @@ omarchy plugin remove akitaonrails.ai-usagebar
 
 The panel keeps the last successful report visible when a refresh fails and
 labels it accordingly. Provider-level stale cache responses and hard errors
-are shown inline. Absolute reset timestamps are rendered as live countdowns,
-so an open panel stays accurate between network refreshes.
+are shown inline, and unlike the bar's alert state they do not turn that bar
+red: only the highest-percent window decides whether it is alarming, and a
+refresh that yields no report at all still marks it. Absolute reset timestamps
+are rendered as live countdowns, so an open panel stays accurate between
+network refreshes.
 
 ## Settings
 

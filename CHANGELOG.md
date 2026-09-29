@@ -9,6 +9,10 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Changed
+
+- **The Omarchy bar no longer turns red for a cached or failed refresh.** That alert state now follows the highest-percent window alone, like the Waybar `class` and every other frontend; stale and error text stays in the panel. A refresh that yields no report at all still marks the bar. Thresholds are unchanged.
+
 ## [1.27.0] — 2026-09-28
 
 ### Added

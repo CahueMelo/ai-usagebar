@@ -669,7 +669,8 @@ function headline(entry, barWindow) {
 function isAlarming(entry) {
   if (!entry) return false
   var summary = headline(entry)
-  return entry.status === "error" || entry.stale === true || summary.severity === "critical"
+  // Cached and failed fetches stay visible without turning the bar red on their own.
+  return summary.severity === "critical"
 }
 
 function formatDuration(milliseconds) {
