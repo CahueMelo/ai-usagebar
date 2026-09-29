@@ -11,7 +11,17 @@ Each release is also published at
 
 ### Changed
 
+- **Cursor on-demand in `usage --json` is numeric.** The On-Demand text row
+  carries `used_cents`, `limit_cents`, and `percent` (USD cents and the
+  consumed percent) when Cursor reports a prepaid cap. The Omarchy chip and
+  panel meter read those fields. The formatted `$spent / $cap` value is
+  unchanged for every other surface. A report from an older binary, which has
+  only that formatted value, still works.
 - **The Omarchy bar no longer turns red for a cached or failed refresh.** That alert state now follows the highest-percent window alone, like the Waybar `class` and every other frontend; stale and error text stays in the panel. A refresh that yields no report at all still marks the bar. Thresholds are unchanged.
+
+### Fixed
+
+- **Omarchy panel scrolls long settings forms faster.** Touchpad gestures, mouse wheels, and keyboard steps now cover more of the popup per movement, so the Save button remains reachable without dozens of gestures.
 
 ## [1.27.0] — 2026-09-28
 

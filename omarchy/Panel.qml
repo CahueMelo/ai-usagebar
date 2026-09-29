@@ -547,7 +547,7 @@ Panel {
           root.selectEntry(root.entryIndex + dx)
         }
         if (dy !== 0)
-          panelFlick.contentY = root.clamp(panelFlick.contentY + dy * Style.space(56), 0,
+          panelFlick.contentY = root.clamp(panelFlick.contentY + dy * Style.space(96), 0,
             Math.max(0, panelFlick.contentHeight - panelFlick.height))
       }
       onActivateRequested: if (!root.settingsOpen) root.refresh()
@@ -568,6 +568,24 @@ Panel {
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        WheelHandler {
+          target: null
+          enabled: panelFlick.interactive
+          acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+          onWheel: function(event) {
+            if (event.pixelDelta.y === 0 && event.angleDelta.y === 0) {
+              event.accepted = false
+              return
+            }
+            // Keep touchpad motion smooth while covering more of the long settings form.
+            var delta = event.pixelDelta.y !== 0
+              ? event.pixelDelta.y * 5
+              : event.angleDelta.y / 120 * Style.space(144)
+            panelFlick.contentY = root.clamp(panelFlick.contentY - delta,
+              0, Math.max(0, panelFlick.contentHeight - panelFlick.height))
+          }
+        }
 
         Column {
           id: column

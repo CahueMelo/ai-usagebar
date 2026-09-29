@@ -104,6 +104,11 @@ assert.match(panelSource, /providerList\.forceLayout\(\)/);
 // rendered with three borders. (#231)
 assert.match(panelSource, /Column\s*\{[\s\S]*?id:\s*column[\s\S]*?x:\s*Style\.spacing\.hairline/);
 assert.match(panelSource, /width:\s*panelFlick\.width\s*-\s*Style\.spacing\.hairline\s*\*\s*2/);
+// Long settings forms must remain reachable with mouse wheels and touchpads.
+assert.match(panelSource, /WheelHandler\s*\{[\s\S]*?acceptedDevices:\s*PointerDevice\.Mouse\s*\|\s*PointerDevice\.TouchPad/);
+const touchpadScale = /event\.pixelDelta\.y\s*\*\s*(\d+(?:\.\d+)?)/.exec(panelSource);
+assert.equal(Number(touchpadScale?.[1]), 5, 'touchpad scroll covers five times the raw pixel delta');
+assert.match(panelSource, /event\.angleDelta\.y\s*\/\s*120\s*\*\s*Style\.space\(/);
 // The persisted choice is the source of truth on every entries change: when
 // a refresh gap briefly dropped the chosen entry, syncSelection's fallback
 // re-resolved to the primary and that transient selection stuck after the
@@ -856,6 +861,65 @@ const cursorDemandHot = model.parseReport(JSON.stringify({entries: [{
 assert.equal(model.headline(cursorDemandHot).text, '10% · 7% · 96%');
 assert.equal(model.headline(cursorDemandHot).severity, 'critical');
 assert.equal(model.isAlarming(cursorDemandHot), true);
+// The report's cents win over the formatted value, including a value that
+// is not money at all. Percent comes from the row; dollars left come from
+// the cents.
+const cursorNumeric = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 35, value: '35%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: 'not money', used_cents: 125, limit_cents: 500, percent: 25}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorNumeric).text, '35% · 7% · 25%');
+const numericRow = model.groupedSections(cursorNumeric.sections).filter(row => row.label === 'On-Demand')[0];
+assert.equal(numericRow.value, '$3.75');
+assert.equal(numericRow.percent, 25);
+assert.equal(numericRow.detail, '$1.25 of $5.00 used (25%)');
+const cursorContradicts = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 35, value: '35%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: '$9.00 / $10.00', used_cents: 0, limit_cents: 500, percent: 0}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorContradicts).text, '35% · 7% · 0%');
+assert.equal(model.groupedSections(cursorContradicts.sections).filter(row => row.label === 'On-Demand')[0].value, '$5.00');
+// Cents without a percent still meter. A fractional cent is not minor units
+// and falls back to the formatted value.
+const cursorCentsOnly = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 10, value: '10%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: 'not money', used_cents: 480, limit_cents: 500}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorCentsOnly).text, '10% · 7% · 96%');
+const cursorFractional = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 10, value: '10%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: '$4.80 / $5.00', used_cents: 480.5, limit_cents: 500, percent: 96}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorFractional).text, '10% · 7% · 96%');
+assert.equal(model.groupedSections(cursorFractional.sections).filter(row => row.label === 'On-Demand')[0].value, '$0.20');
+const cursorOver = model.parseReport(JSON.stringify({entries: [{
+  id: 'cursor', error: null,
+  sections: [
+    {type: 'metric', label: 'Cursor Models', percent: 10, value: '10%', detail: '', severity: 'low'},
+    {type: 'metric', label: 'Other Models', percent: 7, value: '7%', detail: '', severity: 'low'},
+    {type: 'text', label: 'On-Demand', value: 'not money', used_cents: 600, limit_cents: 500, percent: 120}
+  ]
+}]})).entries[0];
+assert.equal(model.headline(cursorOver).text, '10% · 7% · 120%');
+assert.equal(model.headline(cursorOver).severity, 'critical');
+assert.equal(model.groupedSections(cursorOver.sections).filter(row => row.label === 'On-Demand')[0].value, '$0.00');
+assert.equal(model.groupedSections(cursorOver.sections).filter(row => row.label === 'On-Demand')[0].detail, '$6.00 of $5.00 used (120%)');
 const hideDemand = { models: true, other: true, demand: false };
 const hideModels = { models: false, other: true, demand: true };
 assert.equal(model.cursorDualHeadline(cursorPrepaid, hideDemand).text, '35% · 7%');

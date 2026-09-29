@@ -76,11 +76,31 @@ pub(crate) struct SectionProjection {
     /// it, and that declaration is what the frontend reads instead of guessing
     /// from the label.
     pub headline: MetricHeadline,
+    /// USD cents of spend behind a text row's formatted value. Set only for
+    /// Cursor's On-Demand line. The report copies the cents onto that text
+    /// section so a frontend can meter the prepaid cap without parsing the
+    /// `$spent / $cap` string `fmt_minor` produced.
+    pub used_cents: Option<i64>,
+    /// Positive prepaid cap in USD cents. `None` when Cursor reported spend
+    /// without a cap — the row stays a plain amount.
+    pub limit_cents: Option<i64>,
 }
 
 struct SectionBuilder(Vec<SectionProjection>);
 
 impl SectionBuilder {
+    fn projection(section: Section) -> SectionProjection {
+        SectionProjection {
+            section,
+            reset_at: None,
+            window: None,
+            group: None,
+            headline: MetricHeadline::Percent,
+            used_cents: None,
+            limit_cents: None,
+        }
+    }
+
     fn new(sections: Vec<Section>) -> Self {
         Self(
             sections
@@ -90,13 +110,7 @@ impl SectionBuilder {
                         !matches!(section, Section::Metric { .. }),
                         "metric sections must declare reset metadata with push_metric"
                     );
-                    SectionProjection {
-                        section,
-                        reset_at: None,
-                        window: None,
-                        group: None,
-                        headline: MetricHeadline::Percent,
-                    }
+                    Self::projection(section)
                 })
                 .collect(),
         )
@@ -107,26 +121,16 @@ impl SectionBuilder {
             !matches!(section, Section::Metric { .. }),
             "metric sections must declare reset metadata with push_metric"
         );
-        self.0.push(SectionProjection {
-            section,
-            reset_at: None,
-            window: None,
-            group: None,
-            headline: MetricHeadline::Percent,
-        });
+        self.0.push(Self::projection(section));
     }
 
     /// A metric whose window length is not known exactly (a calendar month,
     /// a vendor-defined billing period, or no stated window at all).
     fn push_metric(&mut self, section: Section, reset_at: Option<DateTime<Utc>>) {
         assert!(matches!(section, Section::Metric { .. }));
-        self.0.push(SectionProjection {
-            section,
-            reset_at,
-            window: None,
-            group: None,
-            headline: MetricHeadline::Percent,
-        });
+        let mut row = Self::projection(section);
+        row.reset_at = reset_at;
+        self.0.push(row);
     }
 
     /// A metric whose vendor chose which of its two numbers goes on the bar.
@@ -134,13 +138,9 @@ impl SectionBuilder {
     /// percentage and uses [`SectionBuilder::push_metric`].
     fn push_metric_with_headline(&mut self, section: Section, headline: MetricHeadline) {
         assert!(matches!(section, Section::Metric { .. }));
-        self.0.push(SectionProjection {
-            section,
-            reset_at: None,
-            window: None,
-            group: None,
-            headline,
-        });
+        let mut row = Self::projection(section);
+        row.headline = headline;
+        self.0.push(row);
     }
 
     /// A metric on a window of exactly `window` length, so a frontend can
@@ -152,13 +152,10 @@ impl SectionBuilder {
         window: chrono::Duration,
     ) {
         assert!(matches!(section, Section::Metric { .. }));
-        self.0.push(SectionProjection {
-            section,
-            reset_at,
-            window: Some(window),
-            group: None,
-            headline: MetricHeadline::Percent,
-        });
+        let mut row = Self::projection(section);
+        row.reset_at = reset_at;
+        row.window = Some(window);
+        self.0.push(row);
     }
 
     /// A metric that belongs to a named sub-group of the panel (SuperGrok's
@@ -167,13 +164,31 @@ impl SectionBuilder {
     /// the only extra thing they assert.
     fn push_metric_in_group(&mut self, section: Section, group: &'static str) {
         assert!(matches!(section, Section::Metric { .. }));
-        self.0.push(SectionProjection {
-            section,
-            reset_at: None,
-            window: None,
-            group: Some(group),
-            headline: MetricHeadline::Percent,
+        let mut row = Self::projection(section);
+        row.group = Some(group);
+        self.0.push(row);
+    }
+
+    /// Cursor's prepaid on-demand row. `value` stays the formatted pair the
+    /// TUI and every other frontend print. The cents travel beside it so a
+    /// frontend can meter the cap without parsing that string. A non-positive
+    /// cap is spend with nothing to meter against, so it is not recorded.
+    fn push_on_demand(&mut self, used_cents: i64, limit_cents: Option<i64>) {
+        let value = match limit_cents {
+            Some(limit) => format!(
+                "{} / {}",
+                crate::usage::fmt_minor(used_cents, 2, Some("USD")),
+                crate::usage::fmt_minor(limit, 2, Some("USD"))
+            ),
+            None => crate::usage::fmt_minor(used_cents, 2, Some("USD")),
+        };
+        let mut row = Self::projection(Section::Text {
+            label: "On-Demand".into(),
+            value,
         });
+        row.used_cents = Some(used_cents);
+        row.limit_cents = limit_cents.filter(|limit| *limit > 0);
+        self.0.push(row);
     }
 }
 
@@ -1142,17 +1157,7 @@ fn cursor_sections(s: &crate::usage::CursorSnapshot, now: DateTime<Utc>) -> Sect
         );
         if let Some(used) = s.on_demand_used_cents {
             v.push(Section::Spacer);
-            v.push(Section::Text {
-                label: "On-Demand".into(),
-                value: match s.on_demand_limit_cents {
-                    Some(limit) => format!(
-                        "{} / {}",
-                        crate::usage::fmt_minor(used, 2, Some("USD")),
-                        crate::usage::fmt_minor(limit, 2, Some("USD"))
-                    ),
-                    None => crate::usage::fmt_minor(used, 2, Some("USD")),
-                },
-            });
+            v.push_on_demand(used, s.on_demand_limit_cents);
         }
     }
     v.push(Section::Spacer);
@@ -3089,6 +3094,43 @@ mod tests {
             s,
             Section::Text { label, value } if label == "Resets" && value.contains("9d")
         )));
+    }
+
+    #[test]
+    fn cursor_on_demand_projection_keeps_the_cents() {
+        let mut snapshot = cursor_snap();
+        snapshot.on_demand_enabled = true;
+        snapshot.on_demand_used_cents = Some(1785);
+        snapshot.on_demand_limit_cents = Some(35000);
+        let projected =
+            sections_with_metadata_for(&ready(VendorSnapshot::Cursor(snapshot.clone())), now(), 5);
+        let row = projected
+            .iter()
+            .find(|row| {
+                matches!(
+                    &row.section,
+                    Section::Text { label, .. } if label == "On-Demand"
+                )
+            })
+            .expect("on-demand row");
+        assert_eq!(row.used_cents, Some(1785));
+        assert_eq!(row.limit_cents, Some(35000));
+
+        // Spend with no positive cap is still a row, and still not a meter.
+        snapshot.on_demand_limit_cents = Some(0);
+        let bare = sections_with_metadata_for(&ready(VendorSnapshot::Cursor(snapshot)), now(), 5);
+        let bare_row = bare
+            .iter()
+            .find(|row| {
+                matches!(
+                    &row.section,
+                    Section::Text { label, value }
+                        if label == "On-Demand" && value == "$17.85 / $0.00"
+                )
+            })
+            .expect("on-demand row without a cap");
+        assert_eq!(bare_row.used_cents, Some(1785));
+        assert_eq!(bare_row.limit_cents, None);
     }
 
     #[test]
