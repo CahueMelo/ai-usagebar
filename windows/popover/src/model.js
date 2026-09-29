@@ -1462,17 +1462,25 @@ function joinError(explained) {
   return explained.title + ". " + explained.hint;
 }
 
+// A path in a diagnostic is the actionable part ("not found at <path>"), so it
+// stays; only the home prefix becomes `~`, which keeps the account name off the
+// card. Rewriting the prefix instead of cutting the path to the next space
+// matters: `Application Support` has one, and cutting there left
+// "Support/Cursor/…" behind on macOS and dropped the whole path on Windows.
+const HOME_PREFIX = /(?:[A-Za-z]:\\Users\\[^\\\s]+|\/(?:Users|home)\/[^/\s]+|\/root)(?=[\\/]|$|\s)/g;
+
 function shortenDiagnostic(raw, locale) {
   let text = String(raw || "")
     .replace(/credentials error:\s*/ig, "")
     .replace(/network transport error:\s*/ig, "")
     .replace(/schema mismatch:\s*/ig, "")
     .replace(/HTTP \d+:\s*/g, "")
-    .replace(/[A-Za-z]:\\[^\s]+/g, "")
-    .replace(/(?:\/home|\/Users|\/root|~)[^\s]*/g, "")
+    .replace(HOME_PREFIX, "~")
     .replace(/\s{2,}/g, " ")
     .trim();
   text = text.replace(/^[A-Za-z0-9. _-]+:\s+/, "");
+  // A bare path says where, never what went wrong: it is no diagnosis.
+  if (/^~[\\/]\S*$/.test(text)) text = "";
   if (text === "") return m.open_tui_for_details({}, { locale: lang(locale) });
   // The card wraps long hints, so keep the whole diagnosis; only a runaway
   // body (an HTML error page pasted into the message) is cut.

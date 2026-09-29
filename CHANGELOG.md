@@ -9,6 +9,17 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Popover error messages keep their path.** The card removed absolute paths
+  from a diagnostic, but only up to the next space, so on macOS "Cursor
+  database not found at ~/Library/Application Support/…" became "not found at
+  Support/Cursor/…", and on Windows the path vanished and the sentence read
+  "not found at Open the Cursor IDE". The path now stays whole, with only the
+  home prefix (`/Users/<name>`, `/home/<name>`, `/root`, `C:\Users\<name>`)
+  folded to `~`, so the account name still stays off the card. A diagnosis that
+  is nothing but a path still falls back to "Open TUI for details".
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed

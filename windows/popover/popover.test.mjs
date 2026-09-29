@@ -298,6 +298,21 @@ assert.equal(
 );
 assert.ok(!friendlyError('Zai: no API key in C:\\Users\\dj4lm\\AppData\\Roaming\\ai-usagebar\\config\\config.toml.').includes('AppData'));
 
+// A diagnostic keeps its path, with only the home prefix folded to `~`; a
+// space inside the path must not cut it (macOS `Application Support`).
+{
+  const mac = friendlyError('Credentials error. Cursor database not found at /Users/someone/Library/Application Support/Cursor/User/globalStorage/state.vscdb. Open the Cursor IDE and sign in.');
+  assert.ok(mac.includes('~/Library/Application Support/Cursor/User/globalStorage/state.vscdb'), mac);
+  assert.ok(!mac.includes('someone'), mac);
+  const win = friendlyError('Credentials error. Cursor database not found at C:\\Users\\someone\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb. Open the Cursor IDE and sign in.');
+  assert.ok(win.includes('~\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb'), win);
+  assert.ok(!win.includes('someone'), win);
+  const linux = friendlyError('Credentials error. file missing at /home/someone/.config/cursor/auth.json, sign in.');
+  assert.ok(linux.includes('~/.config/cursor/auth.json'), linux);
+  assert.ok(!linux.includes('someone'), linux);
+  assert.ok(friendlyError('Credentials error. not found at /root/.x/y.json.').includes('~/.x/y.json'));
+}
+
 assert.equal(displayPlan('Claude', 'Claude Max 5x'), 'Max 5x');
 assert.equal(displayPlan('Claude', 'Team 5x'), 'Team 5x');
 assert.equal(displayPlan('Codex', 'Plus'), 'Plus');
