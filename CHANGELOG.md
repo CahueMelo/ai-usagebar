@@ -9,6 +9,20 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
+  Terminal output from `account add`, `account switch`, and `account merge-history`
+  previously interpolated raw `.display()` paths and unsanitized labels directly
+  into `println!` and `eprintln!`, violating the project invariant that untrusted
+  text is sanitized at the sink and risking ANSI escape sequence injection into
+  the terminal. All user-visible terminal prints now route through
+  `sanitize_untrusted_path` and `sanitize_untrusted_line`.
+- **`account merge-history` synchronizes under `account_switch_lock`.**
+  Running history merges now acquires the profile switch lock before staging
+  and merging, preventing race conditions and potential profile corruption
+  when concurrent switches or refreshes target the same profile.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed

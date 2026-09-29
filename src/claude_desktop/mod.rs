@@ -360,7 +360,7 @@ pub fn plan_switch(paths: &Paths, label: &str, opts: SwitchOpts) -> Result<Switc
                 "no saved Claude Desktop account {label:?} in {}; known: {known:?}. \
                  Capture one with `claude-acc add {label}` \
                  (https://github.com/ohmaseclaro/claude-acc)",
-                paths.profiles_dir.display()
+                sanitize_untrusted_path(&paths.profiles_dir)
             ))
         })?;
 
@@ -499,7 +499,7 @@ pub fn history_target(paths: &Paths) -> Result<(String, Option<String>)> {
     let account_uuid = merge::logged_in_account(&config).ok_or_else(|| {
         AppError::Credentials(format!(
             "no account is signed into {}; sign in before merging history",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         ))
     })?;
     let org_uuid = resolve_org(&paths.sessions_root(), &account_uuid, &config);
@@ -634,7 +634,7 @@ pub fn plan_history_merge(paths: &Paths) -> Result<HistoryMerge> {
     let account_uuid = merge::logged_in_account(&config).ok_or_else(|| {
         AppError::Credentials(format!(
             "no account is signed into {}; sign in before merging history",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         ))
     })?;
 
