@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Cursor on-demand in `usage --json` is numeric.** The On-Demand text row
+  carries `used_cents`, `limit_cents`, and `percent` (USD cents and the
+  consumed percent) when Cursor reports a prepaid cap. The Omarchy chip and
+  panel meter read those fields. The formatted `$spent / $cap` value is
+  unchanged for every other surface. A report from an older binary, which has
+  only that formatted value, still works.
+
 ### Fixed
 
 - **Omarchy panel scrolls long settings forms faster.** Touchpad gestures, mouse wheels, and keyboard steps now cover more of the popup per movement, so the Save button remains reachable without dozens of gestures.
