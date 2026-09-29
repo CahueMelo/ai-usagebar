@@ -99,6 +99,11 @@ assert.match(panelSource, /providerList\.forceLayout\(\)/);
 // rendered with three borders. (#231)
 assert.match(panelSource, /Column\s*\{[\s\S]*?id:\s*column[\s\S]*?x:\s*Style\.spacing\.hairline/);
 assert.match(panelSource, /width:\s*panelFlick\.width\s*-\s*Style\.spacing\.hairline\s*\*\s*2/);
+// Long settings forms must remain reachable with mouse wheels and touchpads.
+assert.match(panelSource, /WheelHandler\s*\{[\s\S]*?acceptedDevices:\s*PointerDevice\.Mouse\s*\|\s*PointerDevice\.TouchPad/);
+const touchpadScale = /event\.pixelDelta\.y\s*\*\s*(\d+(?:\.\d+)?)/.exec(panelSource);
+assert.equal(Number(touchpadScale?.[1]), 5, 'touchpad scroll covers five times the raw pixel delta');
+assert.match(panelSource, /event\.angleDelta\.y\s*\/\s*120\s*\*\s*Style\.space\(/);
 // The persisted choice is the source of truth on every entries change: when
 // a refresh gap briefly dropped the chosen entry, syncSelection's fallback
 // re-resolved to the primary and that transient selection stuck after the

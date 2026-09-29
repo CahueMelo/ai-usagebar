@@ -9,6 +9,10 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Omarchy panel scrolls long settings forms faster.** Touchpad gestures, mouse wheels, and keyboard steps now cover more of the popup per movement, so the Save button remains reachable without dozens of gestures.
+
 ## [1.27.0] — 2026-09-28
 
 ### Added
