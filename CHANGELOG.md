@@ -9,6 +9,10 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **The Omarchy bar's per-provider chips open that provider.** With **Show all providers** on, a left-click on a chip selects the entry that chip stands for and opens the panel there, the way the panel's own provider buttons do, instead of toggling the panel on whatever was selected last. Clicking the chip the panel already shows closes it; right-click and middle-click keep their panel-wide meaning, and hovering a chip still shows the button tooltip.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed

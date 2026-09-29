@@ -241,6 +241,24 @@ Panel {
     if (panelFlick) panelFlick.contentY = 0
   }
 
+  // A bar chip stands for one entry when the bar shows several: select it,
+  // then open the panel on it. The chip the panel already shows toggles
+  // closed, the way the bar button does.
+  function openEntry(entryId) {
+    var wanted = String(entryId || "")
+    for (var i = 0; i < visibleEntries.length; i++) {
+      if (visibleEntries[i].id !== wanted) continue
+      if (opened && i === entryIndex) {
+        close()
+        return
+      }
+      selectEntry(i)
+      open()
+      return
+    }
+    open()
+  }
+
   function startRefresh() {
     if (usageProcess.running) {
       refreshQueued = true
@@ -410,6 +428,7 @@ Panel {
         chipAlarm = pools.severity === "critical"
       }
       next.push({
+        id: chip.id,
         brand: chip.brand,
         icon: chip.icon,
         label: label,
