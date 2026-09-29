@@ -14,6 +14,8 @@
 //! The same transform also serves Chromium OSCrypt stores on Linux (the Grok
 //! Bot desktop app's `sand-secrets.json`), where the only difference is the
 //! PBKDF2 round count — hence [`derive_key_with_rounds`] / [`derive_key_linux`].
+//! Linux tags the peanuts fallback `v10` and a Secret Service password `v11`;
+//! the ciphertext after that tag is the same CBC envelope.
 //!
 //! Windows OSCrypt is a different scheme under the same `v10` tag: a random
 //! 256-bit key lives in the app's `Local State` JSON (`os_crypt.encrypted_key`,
@@ -40,7 +42,12 @@ const ROUNDS: u32 = 1003;
 pub const ROUNDS_LINUX: u32 = 1;
 const KEY_LEN: usize = 16;
 const IV: [u8; 16] = [b' '; 16];
+/// Peanuts-fallback tag. Encryption always writes this; decryption also
+/// accepts [`PREFIX_V11`].
 const PREFIX: &[u8] = b"v10";
+/// Linux OSCrypt tag when the PBKDF2 password comes from the Secret Service
+/// (libsecret / KWallet). Same AES-128-CBC envelope as [`PREFIX`].
+const PREFIX_V11: &[u8] = b"v11";
 
 /// Login-Keychain generic-password service holding Claude Desktop's secret.
 #[cfg(target_os = "macos")]
@@ -72,17 +79,22 @@ pub fn derive_key_linux(secret: &[u8]) -> [u8; KEY_LEN] {
     derive_key_with_rounds(secret, ROUNDS_LINUX)
 }
 
-/// Decrypt a base64 `v10…` safeStorage value into its plaintext bytes.
+/// Decrypt a base64 `v10…` or Linux `v11…` safeStorage value into its
+/// plaintext bytes. `v11` is the same AES-128-CBC envelope; the tag only
+/// records that the key was derived from the Secret Service password rather
+/// than `"peanuts"`.
 pub fn decrypt(key: &[u8; KEY_LEN], value_b64: &str) -> Result<Vec<u8>> {
     let raw = base64::engine::general_purpose::STANDARD
         .decode(value_b64.trim())
         .map_err(|e| AppError::Other(format!("safeStorage value is not base64: {e}")))?;
-    if raw.len() < PREFIX.len() || &raw[..PREFIX.len()] != PREFIX {
+    let Some(ct) = raw
+        .strip_prefix(PREFIX)
+        .or_else(|| raw.strip_prefix(PREFIX_V11))
+    else {
         return Err(AppError::Other(
-            "safeStorage value is missing the v10 prefix".into(),
+            "safeStorage value is missing the v10/v11 prefix".into(),
         ));
-    }
-    let ct = &raw[PREFIX.len()..];
+    };
     Aes128CbcDec::new(key.into(), &IV.into())
         .decrypt_padded_vec::<Pkcs7>(ct)
         .map_err(|e| AppError::Other(format!("safeStorage decrypt failed: {e}")))
@@ -305,6 +317,22 @@ mod tests {
         let k = key();
         let no_prefix = base64::engine::general_purpose::STANDARD.encode(b"not-v10-data");
         assert!(decrypt(&k, &no_prefix).is_err());
+    }
+
+    #[test]
+    fn linux_v11_prefix_decrypts_with_the_same_cbc_envelope() {
+        // Chromium writes `v11` when the password comes from the Secret
+        // Service. The bytes after the tag match a `v10` value sealed with
+        // that same derived key.
+        let k = derive_key_linux(b"keyring-password");
+        let encoded = encrypt(&k, b"cursor-token");
+        let mut raw = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+        assert_eq!(&raw[..PREFIX.len()], PREFIX);
+        raw[2] = b'1';
+        let v11 = base64::engine::general_purpose::STANDARD.encode(raw);
+        assert_eq!(decrypt(&k, &v11).unwrap(), b"cursor-token");
     }
 
     #[test]

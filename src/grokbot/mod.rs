@@ -5,7 +5,7 @@
 //!
 //! The credential is the app's own OAuth session: `creds.rs` reads
 //! `sand-secrets.json` (read-only, never written), whose token fields are
-//! Chromium OSCrypt `v10` blobs. On Linux the file is
+//! Chromium OSCrypt `v10`/`v11` blobs. On Linux the file is
 //! `~/.config/Grok Bot/sand-secrets.json`; the key is the Secret Service item
 //! `application="Grok Bot"`, Chromium's documented `"peanuts"` default, or both.
 //! The app encrypts with `"peanuts"` whenever Electron's selected Linux Secret
@@ -14,8 +14,8 @@
 //! `~/Library/Application Support/Grok Bot/sand-secrets.json` and the key is
 //! the login Keychain item `Grok Bot Safe Storage` / `Grok Bot Key` (1003
 //! rounds, same scheme as Claude Desktop). On Windows it is
-//! `%APPDATA%\Grok Bot\sand-secrets.json`, the blobs are AES-256-GCM, and the
-//! key is the DPAPI-protected `os_crypt.encrypted_key` in the `Local State`
+//! `%APPDATA%\Grok Bot\sand-secrets.json`, the blobs are AES-256-GCM, and
+//! the key is the DPAPI-protected `os_crypt.encrypted_key` in the `Local State`
 //! file beside it. `fetch.rs` refreshes the session through Cursor's public
 //! OAuth client and persists rotations only in ai-usagebar's own vendor cache.
 //!

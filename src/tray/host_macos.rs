@@ -44,6 +44,7 @@ use super::hotkey::{self, HotkeyBinding};
 use super::icon::{Severity, tray_icon_rgba};
 use super::marks;
 use super::menu_bar::{self, LogoSegment, StatusItemContent};
+use super::options_menu::{self, OptionsAction, OptionsLabels};
 use super::panel::{
     CLICK_LOCK_MS, CORNER_RADIUS, CocoaRect, FALLBACK_WORK_AREA_HEIGHT, PopoverPlacement,
     WINDOW_HEIGHT, WINDOW_WIDTH, clamp_popover_height, cocoa_popover_frame, menu_bar_bottom_y,
@@ -58,7 +59,7 @@ use super::strip::{
 };
 use super::style::PopoverStyle;
 use super::updates::Updates;
-use super::{now_ms, startup, tui_launch, update_flow};
+use super::{RELAUNCH_ENV, now_ms, startup, tui_launch, update_flow};
 use crate::config::{Config, UpdateMode};
 use crate::update::{current_os, sweep_old};
 
@@ -66,9 +67,6 @@ const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/popover/index.h
 const POPOVER_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/popover/popover.css"));
 const POPOVER_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/popover/popover.js"));
 
-/// Set on the process an update relaunches, so it waits for the old one to
-/// release the single-instance lock instead of quitting at once.
-const RELAUNCH_ENV: &str = "AIUB_TRAY_RELAUNCH";
 /// How long a relaunched process keeps retrying the lock.
 const RELAUNCH_WAIT: Duration = Duration::from_secs(10);
 
@@ -78,17 +76,16 @@ enum UserEvent {
     Menu(MenuEvent),
     Ipc(String),
     Report(Value),
-    Entry(Value),
     FocusPopover,
     Hotkey,
     Facts,
-    /// A verified update is in place; start it and quit.
-    Restart(PathBuf),
+    /// An update is ready: start the verified exe and quit, or, with `None`, just quit because
+    /// Scoop's script installs the update and starts the new tray itself.
+    Restart(Option<PathBuf>),
 }
 
 enum WorkerCmd {
     Refresh,
-    RefreshEntry(String),
     Detect,
     CheckUpdate { manual: bool },
     InstallUpdate,
@@ -145,6 +142,12 @@ struct TrayState {
     /// (#249): an accessory app has no app menu, so this is the only quit
     /// affordance when the popover cannot be built.
     fallback_menu: Option<FallbackMenu>,
+    /// Labels for the right-click Options menu; the popover refreshes them by
+    /// language with the `menu-labels` IPC.
+    menu_labels: OptionsLabels,
+    /// A right-click screen choice made before the popover's `ready`: the hook
+    /// only exists after it, so the choice waits for `ready` to run.
+    pending_menu_action: Option<&'static str>,
     worker: mpsc::Sender<WorkerCmd>,
     proxy: EventLoopProxy<UserEvent>,
     payload: Value,
@@ -262,6 +265,8 @@ fn run_loop() -> Result<(), String> {
         webview,
         tray,
         fallback_menu,
+        menu_labels: OptionsLabels::default(),
+        pending_menu_action: None,
         worker: cmd_tx,
         proxy: proxy.clone(),
         payload: empty,
@@ -294,11 +299,12 @@ fn run_loop() -> Result<(), String> {
             }
             Event::UserEvent(UserEvent::Ipc(body)) => handle_ipc(&mut state, &body, control_flow),
             Event::UserEvent(UserEvent::Report(payload)) => apply_payload(&mut state, payload),
-            Event::UserEvent(UserEvent::Entry(entry)) => apply_entry(&mut state, entry),
             Event::UserEvent(UserEvent::Facts) => apply_facts(&mut state),
             Event::UserEvent(UserEvent::Hotkey) => toggle_popover_from_keyboard(&mut state),
             Event::UserEvent(UserEvent::Restart(exe)) => {
-                relaunch(&exe);
+                if let Some(exe) = exe {
+                    relaunch(&exe);
+                }
                 *control_flow = ControlFlow::Exit;
             }
             Event::UserEvent(UserEvent::FocusPopover) => {
@@ -369,9 +375,6 @@ fn spawn_worker(
                         Ok(WorkerCmd::Detect) => {
                             run_detection(true);
                             break;
-                        }
-                        Ok(WorkerCmd::RefreshEntry(id)) => {
-                            rt.block_on(push_entry(&proxy, &id));
                         }
                         Ok(WorkerCmd::CheckUpdate { manual }) => {
                             rt.block_on(updates.check(manual));
@@ -512,23 +515,6 @@ async fn push_report(proxy: &EventLoopProxy<UserEvent>, facts: &SharedFacts) {
     let _ = proxy.send_event(UserEvent::Report(payload));
 }
 
-async fn push_entry(proxy: &EventLoopProxy<UserEvent>, id: &str) {
-    let entry = match crate::report::collect_entry_json(id).await {
-        Ok(json) => serde_json::from_str::<Value>(&json)
-            .ok()
-            .and_then(|v| v.get("entries")?.as_array()?.first().cloned()),
-        Err(error) => Some(serde_json::json!({
-            "id": id,
-            "status": "error",
-            "error": crate::display::sanitize_untrusted_field(&error),
-            "sections": [],
-        })),
-    };
-    if let Some(entry) = entry {
-        let _ = proxy.send_event(UserEvent::Entry(entry));
-    }
-}
-
 fn apply_payload(state: &mut TrayState, payload: Value) {
     state.payload = payload;
     stamp_facts(state);
@@ -561,30 +547,6 @@ fn stamp_facts(state: &mut TrayState) {
 
 fn apply_facts(state: &mut TrayState) {
     stamp_facts(state);
-    if state.js_ready {
-        push_to_webview(state);
-    }
-}
-
-fn apply_entry(state: &mut TrayState, entry: Value) {
-    let Some(id) = entry.get("id").and_then(Value::as_str).map(str::to_owned) else {
-        return;
-    };
-    let Some(entries) = state
-        .payload
-        .get_mut("entries")
-        .and_then(Value::as_array_mut)
-    else {
-        return;
-    };
-    match entries
-        .iter_mut()
-        .find(|e| e.get("id").and_then(Value::as_str) == Some(id.as_str()))
-    {
-        Some(slot) => *slot = entry,
-        None => entries.push(entry),
-    }
-    apply_strip_icon(state);
     if state.js_ready {
         push_to_webview(state);
     }
@@ -799,7 +761,7 @@ fn handle_tray(state: &mut TrayState, event: TrayIconEvent) {
     } = event
     {
         match button {
-            MouseButton::Left | MouseButton::Right => {
+            MouseButton::Left => {
                 if state.popover_open {
                     hide_popover(state);
                 } else {
@@ -807,23 +769,51 @@ fn handle_tray(state: &mut TrayState, event: TrayIconEvent) {
                     show_popover(state);
                 }
             }
+            MouseButton::Right => {
+                // Close first so the menu does not land on the open panel; the
+                // anchor also feeds `show_popover` if a screen item reopens it.
+                if state.popover_open {
+                    hide_popover(state);
+                }
+                state.last_anchor = Some(cocoa_mouse());
+                show_options_menu(state);
+            }
             MouseButton::Middle => {}
         }
     }
 }
 
-/// A fallback-menu selection (#249). Quit exits the event loop — the same
-/// path the popover's own Quit control takes ("quit" IPC →
-/// `ControlFlow::Exit`), so `LoopDestroyed` still shuts the worker down
-/// cleanly instead of leaving it mid-fetch.
+/// A menu selection: the fallback menu (#249) keeps its own routing, and the
+/// right-click Options menu routes through the shared action ids. Quit exits
+/// the event loop — the same path the popover's own Quit control takes
+/// ("quit" IPC → `ControlFlow::Exit`), so `LoopDestroyed` still shuts the
+/// worker down cleanly instead of leaving it mid-fetch.
 fn handle_menu(state: &mut TrayState, event: &MenuEvent, control_flow: &mut ControlFlow) {
-    let Some(menu) = state.fallback_menu.as_ref() else {
+    if let Some(menu) = state.fallback_menu.as_ref() {
+        if event.id == menu.quit.id() {
+            *control_flow = ControlFlow::Exit;
+        } else if event.id == menu.refresh.id() {
+            let _ = state.worker.send(WorkerCmd::Refresh);
+        }
+        return;
+    }
+    let Some(action) = OptionsAction::from_id(event.id.as_ref()) else {
         return;
     };
-    if event.id == menu.quit.id() {
-        *control_flow = ControlFlow::Exit;
-    } else if event.id == menu.refresh.id() {
-        let _ = state.worker.send(WorkerCmd::Refresh);
+    match action {
+        OptionsAction::Refresh => {
+            let _ = state.worker.send(WorkerCmd::Refresh);
+        }
+        OptionsAction::Detect => {
+            let _ = state.worker.send(WorkerCmd::Detect);
+        }
+        OptionsAction::OpenTui => tui_launch::open(),
+        OptionsAction::ToggleStartup => toggle_startup(state),
+        OptionsAction::Quit => *control_flow = ControlFlow::Exit,
+        OptionsAction::Customize
+        | OptionsAction::Settings
+        | OptionsAction::CheckUpdates
+        | OptionsAction::About => open_popover_action(state, action),
     }
 }
 
@@ -907,6 +897,9 @@ fn handle_ipc(state: &mut TrayState, body: &str, control_flow: &mut ControlFlow)
         "ready" => {
             state.js_ready = true;
             push_to_webview(state);
+            if let Some(screen) = state.pending_menu_action.take() {
+                run_menu_action(state, screen);
+            }
         }
         "detect" => {
             let _ = state.worker.send(WorkerCmd::Detect);
@@ -918,13 +911,9 @@ fn handle_ipc(state: &mut TrayState, body: &str, control_flow: &mut ControlFlow)
         "close" => hide_popover(state),
         "quit" => *control_flow = ControlFlow::Exit,
         "toggle-startup" => toggle_startup(state),
+        "menu-labels" => state.menu_labels = state.menu_labels.merged(&value),
         "switch-account" => request_account_switch(state, &value),
         "resize" => handle_resize(state, &value),
-        "refresh-entry" => {
-            if let Some(id) = value.get("id").and_then(Value::as_str) {
-                let _ = state.worker.send(WorkerCmd::RefreshEntry(id.to_owned()));
-            }
-        }
         "set-shortcut" => {
             let text = value.get("value").and_then(Value::as_str).unwrap_or("");
             set_shortcut(state, text);
@@ -1075,6 +1064,60 @@ fn toggle_startup(state: &mut TrayState) {
     }
 }
 
+/// The Options entries under the cursor: the status item keeps no standing
+/// menu (see `build_tray`); the macOS backend installs this one only for the
+/// duration of `show_menu` — it performs the status-item click and removes it
+/// again — so left clicks keep reaching `handle_tray`.
+fn show_options_menu(state: &mut TrayState) {
+    let menu = Menu::new();
+    options_menu::fill_menu(
+        &menu,
+        &options_menu::options_entries(
+            &state.menu_labels,
+            state.style == PopoverStyle::Native,
+            startup::is_enabled(),
+        ),
+    );
+    state
+        .tray
+        .set_menu(Some(Box::new(menu) as Box<dyn ContextMenu>));
+    state.tray.show_menu();
+}
+
+/// The navigation itself: the popover installs `__AIUB_MENU_ACTION__` on load,
+/// so this only reaches the page once there is a webview to evaluate in.
+fn run_menu_action(state: &TrayState, screen: &str) {
+    if let Some(webview) = state.webview.as_ref() {
+        let _ = webview.evaluate_script(&format!(
+            "window.__AIUB_MENU_ACTION__ && window.__AIUB_MENU_ACTION__({})",
+            json!(screen)
+        ));
+    }
+}
+
+/// A right-click entry that opens the popover on a given screen: show it when
+/// closed, then hand the page the navigation (`__AIUB_MENU_ACTION__`, which
+/// the popover installs). Without a webview the fallback menu (#249) owns the
+/// status item, so the entry opens nothing rather than an empty window. Before
+/// the page reports `ready` the hook does not exist yet, so the choice is kept
+/// and runs on `ready`; a newer choice before `ready` replaces the older one.
+fn open_popover_action(state: &mut TrayState, action: OptionsAction) {
+    if state.webview.is_none() {
+        return;
+    }
+    let Some(screen) = action.popover_action() else {
+        return;
+    };
+    if !state.popover_open {
+        show_popover(state);
+    }
+    if state.js_ready {
+        run_menu_action(state, screen);
+    } else {
+        state.pending_menu_action = Some(screen);
+    }
+}
+
 fn show_popover(state: &mut TrayState) {
     if state.last_anchor.is_none() {
         state.last_anchor = Some(cocoa_mouse());
@@ -1114,6 +1157,9 @@ fn guard_blur(state: &mut TrayState) {
 fn hide_popover(state: &mut TrayState) {
     state.window.set_visible(false);
     state.popover_open = false;
+    // Closing lands the next open on the dashboard, so a screen choice still
+    // waiting for `ready` is dropped too.
+    state.pending_menu_action = None;
     if let Some(webview) = state.webview.as_ref() {
         let _ =
             webview.evaluate_script("window.__AIUB_VISIBLE__ && window.__AIUB_VISIBLE__(false)");
@@ -1159,8 +1205,9 @@ fn position_popover(state: &TrayState) {
 fn build_tray() -> Result<TrayIcon, String> {
     let icon = static_icon().map_err(|error| error.to_string())?;
     // NSStatusItem.setMenu intercepts clicks even when the tray-icon menu-on-
-    // click flags are false. Keep the status item menu-free so both mouse
-    // buttons reach handle_tray and open the WKWebView panel.
+    // click flags are false. Keep the status item menu-free: the left click
+    // opens the WKWebView panel, and the right click shows the Options menu
+    // only while `TrayIcon::show_menu` runs.
     TrayIconBuilder::new()
         .with_icon(icon)
         .with_icon_as_template(true)

@@ -13,7 +13,7 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::monitor::MonitorHandle;
 use tao::platform::windows::{MonitorHandleExtWindows, WindowBuilderExtWindows, WindowExtWindows};
 use tao::window::{Window, WindowBuilder};
-use tray_icon::menu::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{ContextMenu, Menu, MenuEvent};
 use tray_icon::{
     Icon, MouseButton, MouseButtonState, Rect, TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
@@ -37,13 +37,14 @@ use wry::{WebContext, WebView, WebViewBuilder};
 use super::blur::{self, Blur, Foreground, PressHide, Verdict};
 use super::hotkey::{self, HotkeyBinding};
 use super::icon::{Ink, Severity, apply_ink, tray_icon_rgba};
+use super::options_menu::{self, OptionsAction, OptionsLabels};
 use super::payload::{
     HostFacts, SharedFacts, facts_snapshot, host_payload, with_facts, worst_severity, wrap_report,
 };
 use super::placement::{self, Area, Insets};
 use super::style::PopoverStyle;
 use super::updates::Updates;
-use super::{now_ms, profile, startup, taskbar_theme, tui_launch, update_flow};
+use super::{RELAUNCH_ENV, now_ms, profile, startup, taskbar_theme, tui_launch, update_flow};
 use crate::config::{Config, UpdateMode};
 use crate::update::{current_os, sweep_old};
 
@@ -78,9 +79,6 @@ const CLICK_LOCK_MS: u64 = 400;
 /// How often the outside-press watch looks at the mouse while the popover has no focus.
 const PRESS_POLL: Duration = Duration::from_millis(30);
 
-/// Set on the process an update relaunches, so it waits for the old one to
-/// release the single-instance mutex instead of quitting at once.
-const RELAUNCH_ENV: &str = "AIUB_TRAY_RELAUNCH";
 /// How long a relaunched process keeps retrying the mutex.
 const RELAUNCH_WAIT: Duration = Duration::from_secs(10);
 
@@ -93,8 +91,6 @@ enum UserEvent {
     Menu(MenuEvent),
     Ipc(String),
     Report(Value),
-    /// One refreshed entry (Refresh <provider>), merged into the last report.
-    Entry(Value),
     /// The shared facts changed (shortcut, update state); re-stamp the payload.
     Facts,
     /// The mouse went down outside the open popover; the `session` it was seen in, so a
@@ -106,15 +102,15 @@ enum UserEvent {
     },
     /// The global shortcut fired.
     Hotkey,
-    /// A verified update is in place; start it and quit.
-    Restart(PathBuf),
+    /// An update is ready: start the verified exe and quit, or, with `None`, just quit because
+    /// Scoop's script installs the update and starts the new tray itself.
+    Restart(Option<PathBuf>),
     /// Windows switched between light and dark; recolor the tray glyph.
     TaskbarTheme,
 }
 
 enum WorkerCmd {
     Refresh,
-    RefreshEntry(String),
     Detect,
     CheckUpdate { manual: bool },
     InstallUpdate,
@@ -153,14 +149,6 @@ impl Theme {
     }
 }
 
-struct MenuItems {
-    refresh: MenuItem,
-    detect: MenuItem,
-    open_tui: MenuItem,
-    startup: CheckMenuItem,
-    quit: MenuItem,
-}
-
 struct TrayState {
     window: Window,
     webview: Option<WebView>,
@@ -168,7 +156,12 @@ struct TrayState {
     /// outlive the webview: kept here, never in a `build_webview` local.
     _web_context: WebContext,
     tray: TrayIcon,
-    menu: MenuItems,
+    /// Labels for the right-click Options menu; the popover refreshes them by
+    /// language with the `menu-labels` IPC.
+    menu_labels: OptionsLabels,
+    /// A right-click screen choice made before the popover's `ready`: the hook
+    /// only exists after it, so the choice waits for `ready` to run.
+    pending_menu_action: Option<&'static str>,
     context_menu: Menu,
     worker: mpsc::Sender<WorkerCmd>,
     proxy: EventLoopProxy<UserEvent>,
@@ -280,8 +273,13 @@ fn run_loop() -> Result<(), String> {
     let _ = cmd_tx.send(WorkerCmd::Refresh);
 
     let empty = wrap_report("{}", &facts_snapshot(&facts), now_ms(), None);
-    let menu = build_menu(startup::is_enabled());
-    let context_menu = make_menu(&menu);
+    // One `Menu` for the whole run: the subclass is attached to it, so the
+    // right-click refill reuses it instead of replacing it.
+    let context_menu = Menu::new();
+    options_menu::fill_menu(
+        &context_menu,
+        &options_menu::options_entries(&OptionsLabels::default(), false, startup::is_enabled()),
+    );
     let ink = taskbar_theme::ink();
     let tray = build_tray(&empty, ink)?;
     {
@@ -309,7 +307,8 @@ fn run_loop() -> Result<(), String> {
         webview,
         _web_context: web_context,
         tray,
-        menu,
+        menu_labels: OptionsLabels::default(),
+        pending_menu_action: None,
         context_menu,
         worker: cmd_tx,
         proxy: proxy.clone(),
@@ -344,9 +343,6 @@ fn run_loop() -> Result<(), String> {
             Event::UserEvent(UserEvent::Report(payload)) => {
                 apply_payload(&mut state, payload);
             }
-            Event::UserEvent(UserEvent::Entry(entry)) => {
-                apply_entry(&mut state, entry);
-            }
             Event::UserEvent(UserEvent::Facts) => {
                 apply_facts(&mut state);
             }
@@ -361,7 +357,9 @@ fn run_loop() -> Result<(), String> {
                 }
             }
             Event::UserEvent(UserEvent::Restart(exe)) => {
-                relaunch(&exe);
+                if let Some(exe) = exe {
+                    relaunch(&exe);
+                }
                 *control_flow = ControlFlow::Exit;
             }
             Event::UserEvent(UserEvent::OutsidePress { session, x, y }) => {
@@ -452,8 +450,8 @@ fn spawn_worker(
                     rt.block_on(updates.check(false));
                 }
                 // Commands that do not need a whole new report are served
-                // until the poll deadline, so a Refresh <provider> does not
-                // postpone the next full report.
+                // until the poll deadline, so they do not postpone the next
+                // full report.
                 // Read per cycle so a `set-refresh` applies on the next one.
                 let deadline =
                     Instant::now() + Duration::from_secs(facts_snapshot(&facts).refresh_secs);
@@ -464,9 +462,6 @@ fn spawn_worker(
                         Ok(WorkerCmd::Detect) => {
                             run_detection(true);
                             break;
-                        }
-                        Ok(WorkerCmd::RefreshEntry(id)) => {
-                            rt.block_on(push_entry(&proxy, &id));
                         }
                         Ok(WorkerCmd::CheckUpdate { manual }) => {
                             rt.block_on(updates.check(manual));
@@ -518,25 +513,6 @@ async fn push_report(proxy: &EventLoopProxy<UserEvent>, facts: &SharedFacts) {
     let _ = proxy.send_event(UserEvent::Report(payload));
 }
 
-/// Refresh one provider (row menu → Refresh). A failure is folded into the
-/// entry itself so the card shows it; the rest of the report is untouched.
-async fn push_entry(proxy: &EventLoopProxy<UserEvent>, id: &str) {
-    let entry = match crate::report::collect_entry_json(id).await {
-        Ok(json) => serde_json::from_str::<Value>(&json)
-            .ok()
-            .and_then(|v| v.get("entries")?.as_array()?.first().cloned()),
-        Err(error) => Some(serde_json::json!({
-            "id": id,
-            "status": "error",
-            "error": crate::display::sanitize_untrusted_field(&error),
-            "sections": [],
-        })),
-    };
-    if let Some(entry) = entry {
-        let _ = proxy.send_event(UserEvent::Entry(entry));
-    }
-}
-
 fn apply_payload(state: &mut TrayState, payload: Value) {
     trace(&format!(
         "report arrived (popover_open = {}, focused = {})",
@@ -580,30 +556,6 @@ fn stamp_facts(state: &mut TrayState) {
 
 fn apply_facts(state: &mut TrayState) {
     stamp_facts(state);
-    if state.js_ready {
-        push_to_webview(state);
-    }
-}
-
-fn apply_entry(state: &mut TrayState, entry: Value) {
-    let Some(id) = entry.get("id").and_then(Value::as_str).map(str::to_owned) else {
-        return;
-    };
-    let Some(entries) = state
-        .payload
-        .get_mut("entries")
-        .and_then(Value::as_array_mut)
-    else {
-        return;
-    };
-    match entries
-        .iter_mut()
-        .find(|e| e.get("id").and_then(Value::as_str) == Some(id.as_str()))
-    {
-        Some(slot) => *slot = entry,
-        None => entries.push(entry),
-    }
-    refresh_icon(state);
     if state.js_ready {
         push_to_webview(state);
     }
@@ -760,9 +712,19 @@ fn handle_tray(state: &mut TrayState, event: TrayIconEvent) {
         TrayIconEvent::Click {
             button: MouseButton::Right,
             button_state: MouseButtonState::Up,
+            rect,
             ..
         } => {
+            state.last_tray_rect = Some(rect);
             hide_popover(state);
+            options_menu::fill_menu(
+                &state.context_menu,
+                &options_menu::options_entries(
+                    &state.menu_labels,
+                    state.style == PopoverStyle::Native,
+                    startup::is_enabled(),
+                ),
+            );
             let hwnd = state.tray.window_handle() as isize;
             // SAFETY: hwnd is the tray message window, valid while `tray` lives.
             // None uses the cursor, which is still over the NotifyIcon.
@@ -775,16 +737,23 @@ fn handle_tray(state: &mut TrayState, event: TrayIconEvent) {
 }
 
 fn handle_menu(state: &mut TrayState, event: &MenuEvent, control_flow: &mut ControlFlow) {
-    if event.id == state.menu.refresh.id() {
-        let _ = state.worker.send(WorkerCmd::Refresh);
-    } else if event.id == state.menu.detect.id() {
-        let _ = state.worker.send(WorkerCmd::Detect);
-    } else if event.id == state.menu.open_tui.id() {
-        tui_launch::open();
-    } else if event.id == state.menu.startup.id() {
-        toggle_startup(state);
-    } else if event.id == state.menu.quit.id() {
-        *control_flow = ControlFlow::Exit;
+    let Some(action) = OptionsAction::from_id(event.id.as_ref()) else {
+        return;
+    };
+    match action {
+        OptionsAction::Refresh => {
+            let _ = state.worker.send(WorkerCmd::Refresh);
+        }
+        OptionsAction::Detect => {
+            let _ = state.worker.send(WorkerCmd::Detect);
+        }
+        OptionsAction::OpenTui => tui_launch::open(),
+        OptionsAction::ToggleStartup => toggle_startup(state),
+        OptionsAction::Quit => *control_flow = ControlFlow::Exit,
+        OptionsAction::Customize
+        | OptionsAction::Settings
+        | OptionsAction::CheckUpdates
+        | OptionsAction::About => open_popover_action(state, action),
     }
 }
 
@@ -797,6 +766,9 @@ fn handle_ipc(state: &mut TrayState, body: &str, control_flow: &mut ControlFlow)
         "ready" => {
             state.js_ready = true;
             push_to_webview(state);
+            if let Some(screen) = state.pending_menu_action.take() {
+                run_menu_action(state, screen);
+            }
         }
         "detect" => {
             let _ = state.worker.send(WorkerCmd::Detect);
@@ -811,12 +783,8 @@ fn handle_ipc(state: &mut TrayState, body: &str, control_flow: &mut ControlFlow)
         }
         "quit" => *control_flow = ControlFlow::Exit,
         "toggle-startup" => toggle_startup(state),
+        "menu-labels" => state.menu_labels = state.menu_labels.merged(&value),
         "resize" => handle_resize(state, &value),
-        "refresh-entry" => {
-            if let Some(id) = value.get("id").and_then(Value::as_str) {
-                let _ = state.worker.send(WorkerCmd::RefreshEntry(id.to_owned()));
-            }
-        }
         "set-shortcut" => {
             let text = value.get("value").and_then(Value::as_str).unwrap_or("");
             set_shortcut(state, text);
@@ -1024,15 +992,46 @@ fn round_corners(window: &Window) {
 fn toggle_startup(state: &mut TrayState) {
     let next = !startup::is_enabled();
     if startup::set_enabled(next).is_ok() {
-        state.menu.startup.set_checked(next);
         if let Some(obj) = state.payload.as_object_mut() {
             obj.insert("startup_enabled".into(), Value::Bool(next));
         }
         if state.js_ready {
             push_to_webview(state);
         }
+    }
+}
+
+/// The navigation itself: the popover installs `__AIUB_MENU_ACTION__` on load,
+/// so this only reaches the page once there is a webview to evaluate in.
+fn run_menu_action(state: &TrayState, screen: &str) {
+    if let Some(webview) = state.webview.as_ref() {
+        let _ = webview.evaluate_script(&format!(
+            "window.__AIUB_MENU_ACTION__ && window.__AIUB_MENU_ACTION__({})",
+            serde_json::json!(screen)
+        ));
+    }
+}
+
+/// A right-click entry that opens the popover on a given screen: show it when
+/// closed, then hand the page the navigation (`__AIUB_MENU_ACTION__`, which
+/// the popover installs). Without a webview there is no popover, so the entry
+/// opens nothing rather than an empty window. Before the page reports `ready`
+/// the hook does not exist yet, so the choice is kept and runs on `ready`;
+/// a newer choice before `ready` replaces the older one.
+fn open_popover_action(state: &mut TrayState, action: OptionsAction) {
+    if state.webview.is_none() {
+        return;
+    }
+    let Some(screen) = action.popover_action() else {
+        return;
+    };
+    if !state.popover_open {
+        show_popover(state, state.last_tray_rect);
+    }
+    if state.js_ready {
+        run_menu_action(state, screen);
     } else {
-        state.menu.startup.set_checked(startup::is_enabled());
+        state.pending_menu_action = Some(screen);
     }
 }
 
@@ -1235,7 +1234,9 @@ fn hide_popover(state: &mut TrayState) {
     state.popover_open = false;
     state.popover_session.fetch_add(1, Ordering::SeqCst);
     // Closing resets navigation (OpenUsage: scroll to top, Customize / Settings
-    // close) so the next open lands on the dashboard.
+    // close) so the next open lands on the dashboard — a screen choice still
+    // waiting for `ready` included.
+    state.pending_menu_action = None;
     if let Some(webview) = state.webview.as_ref() {
         let _ =
             webview.evaluate_script("window.__AIUB_VISIBLE__ && window.__AIUB_VISIBLE__(false)");
@@ -1272,36 +1273,6 @@ fn position_window(window: &Window, tray_rect: Option<Rect>) {
         (80, 80)
     };
     window.set_outer_position(PhysicalPosition::new(x, y));
-}
-
-fn build_menu(startup_enabled: bool) -> MenuItems {
-    MenuItems {
-        refresh: MenuItem::with_id("refresh", "Refresh", true, None),
-        detect: MenuItem::with_id("detect", "Detect Providers", true, None),
-        open_tui: MenuItem::with_id("open-tui", "Open TUI", true, None),
-        startup: CheckMenuItem::with_id(
-            "startup",
-            "Start with Windows",
-            true,
-            startup_enabled,
-            None,
-        ),
-        quit: MenuItem::with_id("quit", "Quit", true, None),
-    }
-}
-
-fn make_menu(items: &MenuItems) -> Menu {
-    let menu = Menu::new();
-    let sep = PredefinedMenuItem::separator();
-    let _ = menu.append_items(&[
-        &items.refresh,
-        &items.detect,
-        &items.open_tui,
-        &sep,
-        &items.startup,
-        &items.quit,
-    ]);
-    menu
 }
 
 fn build_tray(payload: &Value, ink: Ink) -> Result<TrayIcon, String> {

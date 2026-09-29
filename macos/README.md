@@ -11,7 +11,7 @@ The menu-bar item shows the metrics you star in each provider (up to two):
 **Settings → Menu Bar → Menu Bar Shows** draws them as the usage **Chart**
 (the default) or as **Logos**, each starred provider's logo followed by its
 value, two starred metrics stacked. With nothing starred it shows the app
-icon. Left-click or right-click opens the popover.
+icon. Left-click opens the popover; right-click opens the Options menu.
 
 ```bash
 cargo build --release --bin ai-usagebar-tray
@@ -19,9 +19,13 @@ cargo build --release --bin ai-usagebar-tray
 ```
 
 Needs Node.js 20+ on PATH for the first build (`windows/popover/` Vite bundle).
-Click either mouse button on the status item to toggle the popover. Display
-options are in Settings; the footer's Options menu has Detect Providers,
-Open TUI, Start at Login, and Quit. No Dock icon.
+Left-click the status item to toggle the popover. Right-click it for the
+footer's Options menu as a native menu, in the popover's language: Customize
+(Classic only), Settings, Refresh, Detect Providers, Open TUI, Start at Login,
+Check for Updates, About, and Quit; the items that name a screen open the
+popover on it. No Dock icon.
+
+![Right-click menu under the menu bar icon — Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login (checked), Check for Updates, About and Quit](../screenshots/macos-tray-right-click-menu.png)
 
 ![Chart mode in the macOS menu bar, next to the Cursor, Claude, Antigravity, Codex and Claude Code icons](../screenshots/macos-tray-icon.png)
 
@@ -238,12 +242,15 @@ Setting `[ui] overview_vendors = ["openai"]` includes all configured Codex
 accounts. Each Overview checkbox still controls that account's visibility.
 Selecting an entry changes whose usage is displayed, not the active Codex login.
 
-## Multiple OpenRouter accounts
+## Multiple API-key accounts
 
-Entries from `[[openrouter.accounts]]` appear as separate menu choices and use
-`--vendor openrouter --account <label>` behind the scenes. Each account keeps
-its own cache. Set `[openrouter] show_default_account = false` when you do not
-want the unnamed key listed. See the main
+Entries from `[[openrouter.accounts]]` — and the same array under `[zai]`,
+`[deepseek]`, `[kilo]`, `[novita]`, `[moonshot]`, `[grok]`, `[minimax]`, and
+`[orcarouter]` — appear as separate menu choices and use
+`--vendor <vendor> --account <label>` behind the scenes. Each account keeps its
+own cache. Set `show_default_account = false` in the provider's section when
+you do not want the unnamed key listed. See the main
+[API-key account guide](../docs/api-key-accounts.md) and the
 [OpenRouter account guide](../docs/openrouter-accounts.md) for configuration.
 
 ## Live config reload

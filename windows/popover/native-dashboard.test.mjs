@@ -34,12 +34,16 @@ try {
       React.createElement(LanguageProvider, { language },
         React.createElement(ProviderSection, {
           card: section, layout, nowMs,
-          onCustomize() {}, onReset() {}, onRowAction() {}, onRowMenuOpenChange() {},
+          onCustomize() {}, onRowAction() {}, onRowMenuOpenChange() {},
           onSwitchAccount() {}, onToggleCollapse() {}, onToggleShowAs() {},
         }))));
   }
 
   for (const popoverStyle of ['classic', 'native']) {
+    const header = sectionMarkup({ ...emptyLayout(), popoverStyle }, 'en');
+    // The header keeps only the Customize shortcut; the per-card Reset button is gone.
+    assert.doesNotMatch(header, /aria-label="Reset Claude"/);
+    assert.match(header, /aria-label="Customize Claude"/);
     const withGoal = sectionMarkup({ ...emptyLayout(), popoverStyle, usageGoal: true });
     assert.match(withGoal, /Meta agora<\/span><strong class="font-semibold">80%<\/strong>/);
     assert.match(withGoal, /class="usage-goal-meter[^\"]*" role="progressbar"/);
@@ -62,7 +66,7 @@ try {
       React.createElement(NativeDashboard, {
         cards: [card], hint: false, layout: { ...emptyLayout(), popoverStyle: 'native' }, nowMs, payload,
         onCustomizeProvider() {}, onDismissHint() {}, onOpenCustomize() {}, onOpenSettings() {},
-        onResetProvider() {}, onRowAction() {}, onRowMenuOpenChange() {}, onSwitchAccount() {},
+        onRowAction() {}, onRowMenuOpenChange() {}, onSwitchAccount() {},
         onToggleCollapse() {}, onToggleShowAs() {},
       }))));
   // Provider tabs carry the logo and value; the full name is the accessible label, never the short code.
@@ -71,6 +75,19 @@ try {
   assert.doesNotMatch(nativeDashboard, />cld</);
   assert.match(nativeDashboard, /data-card-id="anthropic"/);
   assert.match(nativeDashboard, /aria-expanded="true"/);
+  // A waiting release shows the same Update available card as Classic, above the provider tabs.
+  const withUpdate = renderToStaticMarkup(React.createElement(TooltipProvider, {},
+    React.createElement(LanguageProvider, { language: 'en' },
+      React.createElement(NativeDashboard, {
+        cards: [card], hint: false, layout: { ...emptyLayout(), popoverStyle: 'native' }, nowMs,
+        payload: { ...payload, repository: 'akitaonrails/ai-usagebar', update: { version: '9.9.9', state: 'available', url: '', installable: true, error: '' } },
+        onCustomizeProvider() {}, onDismissHint() {}, onOpenCustomize() {}, onOpenSettings() {},
+        onRowAction() {}, onRowMenuOpenChange() {}, onSwitchAccount() {},
+        onToggleCollapse() {}, onToggleShowAs() {},
+      }))));
+  assert.match(withUpdate, />Update available</);
+  assert.ok(withUpdate.indexOf('>Update available<') < withUpdate.indexOf('native-provider-tabs'));
+  assert.doesNotMatch(nativeDashboard, /Atualização disponível/);
   const settingsPayload = { ...emptyPayload(''), os: 'macos' };
   const settingsProps = {
     cards: [card], layout: { ...emptyLayout(), popoverStyle: 'native' }, nowMs, payload: settingsPayload,

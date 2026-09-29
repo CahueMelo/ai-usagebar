@@ -1676,6 +1676,30 @@ export function updateModeLabel(mode, locale) {
   }
 }
 
+// Labels for the native tray menu, in the popover's current language, so the host
+// can draw its right-click menu matching the popover's Options items.
+export function optionsMenuLabels(locale) {
+  const options = { locale: lang(locale) };
+  return {
+    customize: m.customize({}, options),
+    settings: m.settings({}, options),
+    refresh: m.refresh({}, options),
+    detect: m.detect_providers({}, options),
+    openTui: m.open_tui({}, options),
+    startAtLogin: m.start_at_login({}, options),
+    checkForUpdates: m.check_for_updates({}, options),
+    about: m.about({}, options),
+    quit: m.quit({}, options),
+  };
+}
+
+// Whitelist of the actions the native tray menu may trigger. A case or spacing
+// variant, a non-string, or the empty string is not an action.
+export function menuAction(action) {
+  const allowed = ["customize", "settings", "about", "check-updates"];
+  return typeof action === "string" && allowed.includes(action) ? action : "";
+}
+
 // Physical-key names for the shortcut recorder, keyed by `KeyboardEvent.code`.
 const SHORTCUT_CODES = {
   Space: "Space",

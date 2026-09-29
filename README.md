@@ -23,7 +23,8 @@ codebase.
 - An optional Claude Code context view reads recent local session usage without
   scanning entire histories.
 - Native integrations are available for Omarchy, GNOME Shell, KDE Plasma 6,
-  and a macOS/Windows system-tray popover (`ai-usagebar-tray`).
+  and a macOS/Windows system-tray popover (`ai-usagebar-tray`). An experimental
+  GTK tray frontend for Linux Mint is in [`linux-mint/`](linux-mint/README.md).
 - One bar item can cycle through enabled providers. `[ui] primary` controls the
   initial provider in both the widget and TUI.
 - Atomic caches and file locking prevent duplicate requests from multi-monitor
@@ -48,6 +49,7 @@ codebase.
 
 - [Configuration](docs/configuration.md)
 - [Development guide](DEVELOPMENT.md)
+- [TUI mouse support](docs/tui-mouse-support.md)
 - [Windows build guide](docs/windows-build.md)
 - [Ollama Cloud integration](docs/ollama-setup.md)
 - [Claude accounts](docs/claude-accounts.md)
@@ -220,11 +222,17 @@ scoop bucket add akitaonrails https://github.com/akitaonrails/scoop-bucket
 scoop install ai-usagebar
 ```
 
-Scoop owns updates for Scoop installs (`scoop update ai-usagebar`): a tray
-installed by Scoop offers the release page instead of replacing its own
-files. The tray's built-in updater applies to standalone ZIP installs.
+Scoop-installed trays update themselves through Scoop: **Install Update** (and
+**Automatic**) runs `scoop update ai-usagebar`, then the tray quits while Scoop
+replaces it — usually 10–60 seconds — and relaunches from Scoop's `current`
+path. The Scoop transcript is written to
+`%LOCALAPPDATA%\ai-usagebar\updates\scoop.log`; if Scoop does not deliver the
+requested version, the tray reports that log path and Automatic does not retry
+it in the background. A global Scoop install without the `scoop.ps1` shim
+keeps the release-page fallback. The tray's built-in updater applies to
+standalone ZIP installs.
 
-![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok and Antigravity with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 2d 7h" and "~63% left at reset", and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](screenshots/windows-tray-dashboard.png)
+![Windows tray popover dashboard — provider cards for Claude, Codex, Cursor, SuperGrok, Antigravity and Grok Bot with capsule meters, "used / Resets in" lines under each bar, pace notes such as "Limit in 1d 9h" and "~92% left at reset", an Antigravity card showing its sign-in error, and the footer with the AI Usage version, a "Next update in" countdown and the Options menu](screenshots/windows-tray-dashboard.png)
 
 Build with a standard Rust toolchain plus **Node.js 20+** (the tray WebView is
 a Vite app; `build.rs` runs `npm run build` on Windows). WebView2 Evergreen
@@ -237,8 +245,10 @@ cargo build --release
 ```
 
 Pin the icon in the Windows 11 notification overflow if it hides behind the
-chevron. Right-click the icon for Refresh, Detect Providers, Open TUI, Start
-with Windows, and Quit; left-click opens the popover. On its first run the
+chevron. Left-click opens the popover; right-click opens the same menu as
+the popover's Options — Customize (Classic only), Settings, Refresh, Detect
+Providers, Open TUI, Start at Login, Check for Updates, About, and Quit — in
+the popover's language. On its first run the
 tray detects which vendors already have a credential on this PC (local files
 and keys only, never the network) and turns exactly those on in
 `config.toml` — it never turns a vendor off. Settings adds a global shortcut
@@ -668,7 +678,14 @@ of the reset window in seconds. `window_secs` is present only when the vendor
 states the window (rolling 5h/7d windows; Cursor's billing cycle from
 `billingCycleStart`/`billingCycleEnd`, assumed to be 30 days when the start is
 missing) and is omitted, not `null`, otherwise — a calendar month or an unstated
-window gives a frontend nothing to pace against. Every metric row also carries
+window gives a frontend nothing to pace against. Cursor's On-Demand text row
+may also carry `used_cents`, `limit_cents`, and `percent`: the spend and the
+prepaid cap in USD cents, and how much of that cap is already used (rounded
+half up, and above 100 when spend passes the cap). Those fields are omitted,
+not `null`, when the row is ordinary text or when Cursor reported spend
+without a positive cap. A frontend meters the row from the numbers; `value`
+stays the formatted `$spent / $cap` string other surfaces print. Every metric
+row also carries
 `headline` — `"percent"` or `"value"` — naming which of its two numbers belongs
 on the bar; a frontend draws that one and leaves the other in the detail line,
 rather than inferring a balance row from its label. These fields are additive, so
@@ -688,6 +705,38 @@ ai-usagebar-tui                    # opens in your current terminal
 It works in Kitty, Alacritty, Foot, Ghostty, and other terminal emulators. The
 controls and Settings overlay are the same everywhere; no compositor or window
 manager integration is required.
+
+### TUI controls
+
+| Action | Keys | Mouse |
+|---|---|---|
+| Switch vendor tab | `↑` / `↓`, `Tab` / `Shift+Tab`, `←` / `→` | Click a sidebar entry |
+| Refresh current / all | `r` / `R` | Click the footer action |
+| Open Settings | `s` | Click the footer action |
+| Quit | `q` / `Esc` | Click the footer action |
+| Context view | `c` | — |
+
+In Settings, `↑`/`↓`/`Tab` move the focus ring, `←`/`→`/`space` change the
+focused control, `Ctrl-S` (or `Enter` on Save) saves, and `Esc` closes. Click
+a field to focus it, click an on/off cell to toggle it, and click the
+Primary vendor's name to open a picker popup (`↑`/`↓`, `Enter`/`space`,
+`Esc`; a click outside closes it).
+
+### Which vendors the Primary vendor picker offers
+
+The picker lists every vendor that can actually fetch data, not every vendor
+that exists:
+
+1. Vendors switched **on** in Providers.
+2. **GitHub Copilot** always (its credential lives in the GitHub CLI; there is
+   no local key to enable).
+3. Key vendors **off** but still reachable — a saved API key or an exported
+   env var (`env set (overrides)` in the API keys list).
+
+A vendor that is off with no credential is left out on purpose: choosing it as
+primary would produce a dashboard it cannot fetch from, and saving such a
+primary is blocked (`save_does_not_write_a_disabled_primary`). Turn a vendor
+on first; it then shows up in the picker.
 
 ## Native desktop integrations
 
@@ -731,17 +780,63 @@ The plugin depends only on the `ai-usagebar` executable. It runs the fixed
 only after a right-click. It installs no service, asks for no elevated
 privileges, and does not overwrite user configuration.
 
-### GNOME, KDE, macOS and Windows
+### macOS menu bar and Windows tray
+
+`ai-usagebar-tray` shows the same report in a popover that opens from the
+macOS menu bar or the Windows notification area. The **Popover Style** setting
+(Settings → Appearance) picks its look: **Classic** (the default, shown in the
+[Windows install](#windows) section) or **Native**, which follows Apple's
+macOS 26 UI kit on macOS and Fluent (WinUI 3, with Acrylic and the system
+accent) on Windows. Setup and controls: [macOS](macos/README.md),
+[Windows](windows/README.md).
+
+Native on Windows 11:
+
+| Light | Dark |
+|---|---|
+| <img src="screenshots/windows-tray-native-light.png" width="300" alt="Native popover on Windows 11, light: provider tabs with each provider's percentage, the Claude card with Weekly and Fable meters, and the Options button in the footer"> | <img src="screenshots/windows-tray-native-dark.png" width="300" alt="Native popover on Windows 11, dark, over Acrylic"> |
+| <img src="screenshots/windows-tray-native-settings-light.png" width="300" alt="Native Settings on Windows 11, light, on the General tab, with Providers and Preferences beside it"> | <img src="screenshots/windows-tray-native-settings-dark.png" width="300" alt="Native Settings on Windows 11, dark"> |
+
+| Native in Português | Right-click on the notification-area icon |
+|---|---|
+| <img src="screenshots/windows-tray-native-pt-br.png" width="300" alt="Native popover on Windows 11 in Brazilian Portuguese"> | <img src="screenshots/windows-tray-right-click-menu.png" width="254" alt="Native menu over the notification-area icon after a right-click: Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates, About and Quit"> |
+
+Native on macOS 26:
+
+| Light | Dark |
+|---|---|
+| <img src="screenshots/macos-tray-native-light.png" width="300" alt="Native popover on macOS 26, light: segmented provider tabs, the Claude card with its Weekly meter, refresh and settings buttons at the top"> | <img src="screenshots/macos-tray-native-dark.png" width="300" alt="Native popover on macOS 26, dark"> |
+| <img src="screenshots/macos-tray-native-settings-light.png" width="300" alt="Native Settings on macOS 26, light, on the Preferences tab"> | <img src="screenshots/macos-tray-native-settings-dark.png" width="300" alt="Native Settings on macOS 26, dark: Appearance with Language, Theme, Popover Style and Time Format, and Usage Display below"> |
+
+| Options menu (Native) | Right-click on the menu bar icon | Classic |
+|---|---|---|
+| <img src="screenshots/macos-tray-native-options.png" width="300" alt="Options menu open on macOS: Settings, Refresh, Detect Providers, Open TUI, Start at Login, Check for Updates, About and Quit"> | <img src="screenshots/macos-tray-right-click-menu.png" width="180" alt="Native menu under the menu bar icon after a right-click: Customize, Settings, Refresh, Detect Providers, Open TUI, Start at Login (checked), Check for Updates, About and Quit"> | <img src="screenshots/macos-tray-classic-light.png" width="260" alt="Classic popover on macOS, light, with one card per provider"> |
+
+When a newer release is out, the dashboard shows it above the provider tabs
+(Native) or the cards (Classic), with Install Update where the tray can update
+itself:
+
+| Update available (macOS, Native) | Update available (Windows, Native) |
+|---|---|
+| <img src="screenshots/macos-tray-native-update-light.png" width="300" alt="Native popover on macOS with an Update available card above the provider tabs: AI Usage v1.27.0 is ready to install, with an Install Update button and a blue dot beside the version in the footer"> | <img src="screenshots/windows-tray-native-update-light.png" width="300" alt="Native popover on Windows 11 with the same Update available card and Install Update button above the provider tabs"> |
+| <img src="screenshots/macos-tray-native-update-dark.png" width="300" alt="The same Update available card on macOS, dark"> | <img src="screenshots/windows-tray-native-update-dark.png" width="300" alt="The same Update available card on Windows 11, dark"> |
+
+On macOS the menu bar item shows the starred metrics — Chart (default):
+<img src="screenshots/macos-menu-bar-chart.png" width="40" alt="Menu bar item in Chart mode"> ·
+Logos: <img src="screenshots/macos-menu-bar-logos.png" width="240" alt="Menu bar item in Logos mode: each starred provider's logo with its percentage">
+
+### Desktop integrations
 
 | Integration | Supported providers | Notes |
 |---|---|---|
 | [macOS menu bar](macos/README.md) | Whatever `usage --json` reports | `ai-usagebar-tray`: WKWebView popover + each ready provider's name and usage with a chart glyph. |
-| [GNOME Shell](gnome-extension/README.md) | Claude, Codex, Z.AI, OpenRouter, DeepSeek, Google Antigravity | Antigravity's two quota pools appear as grouped rows. |
+| [GNOME Shell](gnome-extension/README.md) | Menu: whatever `usage --json` reports. Top bar: Claude, Codex, Z.AI, OpenRouter, DeepSeek, Antigravity | Usage overview with native provider submenus and configurable appearance; the top bar follows its vendor preference. |
 | [KDE Plasma 6](kde-plasmoid/README.md) | Whatever `usage --json` reports | Provider tabs in the popup; vendor is per applet instance. |
+| [Linux Mint / Cinnamon](linux-mint/README.md) | Whatever `usage --json` reports | Experimental GTK dashboard with provider icons; left-click the status icon. |
 | [Windows tray](windows/README.md) | Whatever `usage --json` reports | NotifyIcon + WebView2 popover; left-click the tray icon. |
 
-Cursor is not available in the GNOME extension yet. On GNOME, use
-`ai-usagebar --vendor cursor` or open the TUI.
+The GNOME click menu includes Cursor when enabled in `config.toml`; the
+top bar still supports the providers listed in its preferences.
 
 ## Community integrations
 
@@ -902,6 +997,14 @@ bill. See the
 [OpenRouter account guide](docs/openrouter-accounts.md) for the config and
 Waybar examples.
 
+### Multiple keys for other API-key providers
+
+Z.AI, DeepSeek, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the
+same array: one `[[<vendor>.accounts]]` entry per extra key, selected with
+`--vendor <vendor> --account <label>`. Region, team, organization, and display
+settings stay per provider. See the
+[API-key account guide](docs/api-key-accounts.md).
+
 ## Hyprland: float the TUI window
 
 By default Hyprland tiles the TUI. To make `ai-usagebar-tui` open as a centered floating window, the same way Omarchy floats its own settings TUIs (Wi-Fi/`impala`, audio/`wiremix`, Bluetooth/`bluetui`), add this to `~/.config/hypr/hyprland.conf` or any sourced `.conf`, such as `looknfeel.conf`:
@@ -968,8 +1071,11 @@ make clippy                                        # cargo clippy -D warnings
 
 ![ai-usagebar-tui showing the Codex tab — 5h and weekly gauges, Credits block with message-count ranges, tabs at top, key hints in the footer](screenshots/tui-openai.png)
 
-- `Tab` / `l` / `→` — next tab
-- `Shift+Tab` / `h` / `←` — previous tab
+- `↑` / `↓` — move through the vendor menu (wraps; `Tab`/`l`/`→` and
+  `Shift+Tab`/`h`/`←` still work as secondary shortcuts)
+- Mouse — click a vendor menu entry to select it; click the footer's
+  `r`/`R`/`s`/`q`/`Esc` actions to refresh, refresh all, open Settings, or
+  quit; in Settings, click a field to focus it or click **Save** to save
 - `r` — refresh active tab
 - `R` — refresh all tabs
 - `s` — open Settings overlay (primary vendor + API keys)

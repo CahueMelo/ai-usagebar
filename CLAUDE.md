@@ -76,9 +76,9 @@ When cutting a new version (patch, minor, or major):
    cargo machete                               # no unused deps
    omarchy plugin validate .                   # plugin manifest + entry points
    ```
-   `make test` rather than `cargo test`: it also runs the GNOME, KDE, and
-   Omarchy frontend contract suites. `cargo fmt --all -- --check` is on this
-   list because CI's ubuntu job runs it and fails the build on a diff — it was
+   `make test` rather than `cargo test`: it also runs the GNOME, KDE, Omarchy,
+   and Linux Mint frontend contract suites. `cargo fmt --all -- --check` is on
+   this list because CI's ubuntu job runs it and fails the build on a diff — it was
    missing here once, and a correctly-working commit landed on `main` red for
    nothing but a rustfmt line-wrap. If `kde-plasmoid/` changed, also bump
    `KPlugin.Version` in `kde-plasmoid/package/metadata.json`; it is versioned
@@ -315,7 +315,9 @@ vendor's response shape drifts:
 - `src/tooltip.rs` — shared Pango bordered-box renderer (used by
   every vendor's tooltip)
 - `gnome-extension/marker-logic.js` — pure GNOME formatting helpers and their
-  own Node contract tests.
+  own Node contract tests. `gnome-extension/report-model.js` projects
+  `usage --json` for the provider submenus; the top bar still uses the format
+  string.
 - `kde-plasmoid/` — KDE Plasma 6 plasmoid (KPackage). Vendor selection is
   per applet instance via KConfigXT. Its single `usage --json` request omits
   `--vendor`; selection happens client-side, so it never reads

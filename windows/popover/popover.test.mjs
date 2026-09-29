@@ -76,10 +76,21 @@ import {
   updateModeLabel,
   updateAction,
   updateMessage,
+  optionsMenuLabels,
+  menuAction,
 } from './src/model.js';
 import { measurePanelHeight } from './src/panel-size.js';
 
 const englishMessages = JSON.parse(readFileSync(new URL('./messages/en.json', import.meta.url), 'utf8'));
+
+// The page declares an empty icon, so the WebView never asks the tray for /favicon.ico: the
+// custom protocol serves only the page, its script and its stylesheet, and the request logged
+// a 404 in the popover's console on every open.
+{
+  const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  assert.match(page, /<link rel="icon" href="data:," \/>/);
+}
+
 const portugueseMessages = JSON.parse(readFileSync(new URL('./messages/pt-BR.json', import.meta.url), 'utf8'));
 assert.deepEqual(Object.keys(portugueseMessages).sort(), Object.keys(englishMessages).sort());
 assert.ok(Object.values(englishMessages).every((value) => typeof value === 'string' && value.trim()));
@@ -1626,6 +1637,50 @@ assert.equal(resolvedTheme('system'), 'light');
   for (const c of fixture.cases) {
     assert.equal(metricRowKey(c.id, c.label, c.group || ''), c.key, JSON.stringify(c));
   }
+}
+
+// --- options menu labels / native menu action --------------------------------
+
+{
+  // The native tray menu reuses the popover's Options labels in the popover's
+  // current language; the host publishes them via the `menu-labels` command.
+  assert.deepEqual(optionsMenuLabels('en'), {
+    customize: 'Customize',
+    settings: 'Settings',
+    refresh: 'Refresh',
+    detect: 'Detect Providers',
+    openTui: 'Open TUI',
+    startAtLogin: 'Start at Login',
+    checkForUpdates: 'Check for Updates…',
+    about: 'About',
+    quit: 'Quit',
+  });
+  assert.deepEqual(optionsMenuLabels('pt-BR'), {
+    customize: 'Personalizar',
+    settings: 'Configurações',
+    refresh: 'Atualizar',
+    detect: 'Detectar provedores',
+    openTui: 'Abrir TUI',
+    startAtLogin: 'Iniciar ao entrar',
+    checkForUpdates: 'Verificar atualizações…',
+    about: 'Sobre',
+    quit: 'Sair',
+  });
+  // Unknown locales resolve to English, like the `lang` helper.
+  assert.deepEqual(optionsMenuLabels('de'), optionsMenuLabels('en'));
+
+  // menuAction whitelists the four native-menu actions; anything else — a
+  // case/spacing variant, a non-string, the empty string — is ignored ("").
+  assert.equal(menuAction('customize'), 'customize');
+  assert.equal(menuAction('settings'), 'settings');
+  assert.equal(menuAction('about'), 'about');
+  assert.equal(menuAction('check-updates'), 'check-updates');
+  assert.equal(menuAction('refresh'), '');
+  assert.equal(menuAction('Settings'), '');
+  assert.equal(menuAction(' about'), '');
+  assert.equal(menuAction(''), '');
+  assert.equal(menuAction(undefined), '');
+  assert.equal(menuAction(42), '');
 }
 
 console.log('ok');

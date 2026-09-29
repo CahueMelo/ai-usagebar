@@ -9,8 +9,19 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Cursor on-demand in `usage --json` is numeric.** The On-Demand text row
+  carries `used_cents`, `limit_cents`, and `percent` (USD cents and the
+  consumed percent) when Cursor reports a prepaid cap. The Omarchy chip and
+  panel meter read those fields. The formatted `$spent / $cap` value is
+  unchanged for every other surface. A report from an older binary, which has
+  only that formatted value, still works.
+- **The Omarchy bar no longer turns red for a cached or failed refresh.** That alert state now follows the highest-percent window alone, like the Waybar `class` and every other frontend; stale and error text stays in the panel. A refresh that yields no report at all still marks the bar. Thresholds are unchanged.
+
 ### Fixed
 
+- **Omarchy panel scrolls long settings forms faster.** Touchpad gestures, mouse wheels, and keyboard steps now cover more of the popup per movement, so the Save button remains reachable without dozens of gestures.
 - **Grok Bot reads its session on Linux when the app used Chromium's
   `"peanuts"` key.** The Grok Bot desktop app picks its OSCrypt key at runtime
   from whichever Secret Service backend Electron selected, and encrypts with
@@ -24,6 +35,143 @@ Each release is also published at
   right candidate is effectively ruled in. No configuration, re-login or
   keyring change is needed, and a genuinely unreadable file still reports the
   same error it always did.
+
+## [1.27.0] — 2026-09-28
+
+### Added
+
+- **`account merge-history` for relocated Claude Desktop profiles (macOS).**
+  Merges every account's sessions and schedules into whichever account a given
+  profile is signed into, without swapping a credential or touching the app:
+  `ai-usagebar account merge-history --data-dir <DIR> [--from <DIR>]...`.
+  Intended for side-by-side Desktop copies launched with `--user-data-dir`,
+  where `account switch` cannot be used because it installs a stored token
+  over the profile's live login and quits the app by application name. The
+  merge is additive — no deletion sweep runs, so an unattended run cannot lose
+  history — sources are opened read-only, and a second run is a no-op. Note
+  that it deliberately crosses accounts: afterwards one account's window lists
+  conversations started under the others.
+- **GNOME menu supports all enabled providers.** Native submenus display
+  the shared usage report, including Cursor, named accounts and custom
+  providers, with metric labels, balances, errors and reset details supplied
+  by the binary. Collapsed rows preview the first two metrics in report order,
+  retaining their labels and groups, with optional mini bars and symbolic
+  provider icons. Menu preferences offer values only, hidden icons and compact
+  spacing. The top bar continues to follow its vendor preference.
+- **Omarchy bar shows both Cursor pools and prepaid on-demand.** The Quattro
+  chip lists Cursor Models, Other Models, and on-demand used percent in that
+  order (`35% · 7% · 0%`), the same consumed-percent reading OpenRouter uses
+  for a credit balance. The tooltip is one short line per pool. Three switches
+  on the Cursor page turn those figures on and off in the top bar and tooltip
+  only; the open panel still lists every pool, and the last remaining figure
+  cannot be turned off. A pool the report does not contain, such as on-demand
+  with no prepaid row, does not count as that last figure. The bar's urgent
+  color follows the pools still on the chip.
+- The TUI vendor menu is now navigated with the Up/Down arrow keys (wrapping),
+  with `Tab`/`Shift+Tab`/`←`/`→`/`h`/`l` kept as secondary shortcuts. Mouse
+  clicks work in the TUI: click a vendor menu entry to select it, click a
+  footer action to refresh, refresh all, open Settings, or quit, click a
+  Settings field to focus it, or click **Save** to save. In Settings the
+  on/off cells toggle their provider (or the quota-alerts switch) and the
+  focused Primary vendor's ◀/▶ arrows step the radio; the hint line is
+  clickable too: save, close, toggle, reveal and change-vendor segments send
+  their key through the same handler.
+
+### Changed
+
+- **Right-clicking the tray icon opens the Options menu.** On macOS a
+  right-click on the menu bar item no longer opens the popover like a
+  left-click: it shows the footer's Options menu as a native menu —
+  Customize (Classic only), Settings, Refresh, Detect Providers, Open TUI,
+  Start at Login, Check for Updates…, About, Quit — in the popover's
+  language, and the items that name a screen open the popover on that
+  screen. The Windows right-click menu, which had only Refresh, Detect
+  Providers, Open TUI, Start with Windows and Quit, is now the same menu.
+- **Refresh lives in the Options menu only.** The ↺ button in each provider
+  card's header was Reset, not Refresh: one click threw away that
+  provider's row order and visibility. It is gone from the dashboard (Reset
+  stays in the provider's Customize screen, behind a second click), and the
+  row menu's per-provider Refresh went with it; Options → Refresh updates
+  every provider.
+- **Quit in the Options menu is no longer red.** It uses the same color as
+  the other items.
+
+### Fixed
+
+- **GNOME Shell 45–46 compatibility.** Vertical menu rows now use the
+  layout property available in the running Shell, avoiding the unsupported
+  `orientation` property on older versions. The extension had failed to
+  enable on Shell 45 and 46 since it first shipped (#272).
+- **GNOME preferences display literal labels correctly.** The pool description
+  and colour labels no longer treat `&` and `<` as markup.
+
+## [1.26.0] — 2026-09-27
+
+### Added
+
+- **Named accounts for every API-key provider.** The `[[openrouter.accounts]]`
+  array (#221) now works for `[zai]`, `[deepseek]`, `[kilo]`, `[novita]`,
+  `[moonshot]`, `[grok]`, `[minimax]`, and `[orcarouter]`: one entry per extra
+  key, each with its own TUI tab, `usage` report entry (`deepseek@work`),
+  macOS menu choice, and `<vendor>/<label>` cache, selected in the widget with
+  `--vendor <vendor> --account <label>`. The section's existing key stays the
+  default account and its cache path does not move; `show_default_account`
+  hides it once every key is named. Labels follow OpenRouter's rules — no path
+  separators, no duplicates, a key source per entry — and an unknown label
+  fails instead of falling back to the default key. Region, team,
+  organization, and display settings stay per provider, which the new
+  [API-key account guide](docs/api-key-accounts.md) spells out. Kimi is left
+  out: its fallback is the Kimi Code CLI's single OAuth login. Existing
+  configs need no change.
+- **Scoop installs update through Scoop.** Since 1.25.0 a Scoop-installed
+  Windows tray only offers the release page; now Install Update (and
+  Automatic) hands off to `scoop update <app>`, quits while Scoop replaces
+  the tray (usually 10–60 seconds) and comes back by itself through Scoop's
+  `current` folder. Success is Scoop's `current\manifest.json` reaching the
+  new version, not an exit code. The Scoop transcript is at
+  `%LOCALAPPDATA%\ai-usagebar\updates\scoop.log`; if Scoop does not deliver
+  the requested version, the tray reports that log path, and Automatic does
+  not retry it in the background. A global Scoop install without the
+  `scoop.ps1` shim keeps the release page.
+- **Linux Mint Cinnamon tray frontend.** An experimental GTK dashboard reads
+  the existing `usage --json` report, shows provider quota groups with the
+  icon marks already shipped for Omarchy, color-coded pacing bars, a flame
+  warning when projected usage exceeds the limit, and concise disconnected
+  cards. It opens from the native status icon, hides on focus loss, stays out
+  of the taskbar, and offers settings and refresh actions beside each provider.
+  The frontend supports English and Portuguese and retains cached quota rows
+  when authentication temporarily fails. The installer recognizes the Cargo
+  installation in `~/.cargo/bin` and retains explicit binary paths for
+  autostart after it exits; the desktop launcher's TUI action uses the
+  detected TUI path.
+- **Release artifacts are PGP-signed when a signing key is configured.** The
+  release workflow now signs every tarball, zip, and bare binary with a
+  detached ASCII signature (`*.sig`), attaches the public key as
+  `ai-usagebar-signing-key.asc`, and adds a verification section with the
+  key's fingerprint to the release notes. This is opt-in at the repo level:
+  nothing changes until the `GPG_PRIVATE_KEY` (armored secret key) and
+  `GPG_PASSPHRASE` secrets are set; releases cut without them are
+  byte-for-byte what they were before (#257).
+
+### Fixed
+
+- **Grok Bot on Linux when the sign-in password is in the Secret Service.**
+  Chromium tags those `sand-secrets.json` tokens `v11`. The ciphertext is the
+  same AES-128-CBC envelope as the `v10` peanuts fallback; decryption rejected
+  the tag, so the card stayed on "a stored token could not be decrypted".
+- **OrcaRouter from the macOS menu bar.** The menu bar selects a provider with
+  `--vendor <slug>`, but the widget only accepted OrcaRouter as `orca-router`,
+  so `--vendor orcarouter` was rejected and the entry never fetched. The
+  widget now takes the slug; `orca-router` stays accepted as an alias.
+- **`detect` counts a named API-key account as a credential.** A provider whose
+  keys all live in `[[<vendor>.accounts]]` — OpenRouter included — was treated
+  as unconfigured and never switched on, although each named key has a tab of
+  its own.
+- **The tray popover no longer logs a 404 for `/favicon.ico`.** The page had
+  no icon, so the WebView asked the tray's custom protocol for
+  `/favicon.ico` on every open, and the console showed a failed request. The
+  page now declares an empty icon (`data:,`), so nothing is requested.
+>>>>>>> origin/main
 
 ## [1.25.0] — 2026-09-25
 
@@ -3108,7 +3256,9 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.27.0...HEAD
+[1.27.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...v1.27.0
+[1.26.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.22.0...v1.23.0

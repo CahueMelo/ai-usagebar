@@ -1,6 +1,8 @@
 //! Read the Grok Bot desktop app's own credential file — read-only, never
 //! written. `sand-secrets.json` holds the app's Cursor OAuth session as
-//! Chromium OSCrypt `v10` blobs under `cursor-accounts`:
+//! Chromium OSCrypt `v10`/`v11` blobs under `cursor-accounts`. `v11` is the
+//! same AES-128-CBC envelope as `v10`; Linux writes it when the password
+//! comes from the Secret Service item `application=Grok Bot`:
 //!
 //! ```json
 //! {"cursor-accounts": {"active": "<account-id>", "accounts": {
@@ -355,7 +357,7 @@ fn cursor_accounts_object(root: &serde_json::Value) -> Option<serde_json::Value>
     }
 }
 
-/// Decrypt one OSCrypt `v10` blob field into a UTF-8 token. The field name is
+/// Decrypt one OSCrypt `v10` or Linux `v11` blob field into a UTF-8 token. The field name is
 /// safe to name in an error; the blob and its plaintext never are.
 fn decrypt_field(key: &OsCryptKey, field: Option<&serde_json::Value>) -> Result<String> {
     let blob = field

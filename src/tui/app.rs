@@ -4,12 +4,14 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use chrono::Utc;
+use ratatui::layout::Rect;
 use reqwest::Client;
 
 use crate::cache::DEFAULT_TTL;
 use crate::config::{Config, CustomProviderConfig};
 use crate::error::{AppError, Result};
 use crate::theme::Theme;
+use crate::tui::settings::SettingsRow;
 use crate::vendor::{VendorId, VendorOutcome};
 
 /// What we display per vendor — raw snapshot + fetch metadata for native
@@ -208,11 +210,11 @@ fn build_tabs(config: &Config, desktop_labels: &[String]) -> Vec<TabId> {
             for label in desktop_labels {
                 tabs.push(TabId::desktop_account(label.clone()));
             }
-        } else if vendor == VendorId::Openrouter {
-            if config.openrouter.show_default_account || config.openrouter.accounts.is_empty() {
+        } else if let Some(accounts) = config.api_key_accounts(vendor) {
+            if config.show_default_api_key_account(vendor) || accounts.is_empty() {
                 tabs.push(TabId::vendor(vendor));
             }
-            for account in &config.openrouter.accounts {
+            for account in accounts {
                 tabs.push(TabId::account_for(vendor, account.label.clone()));
             }
         } else if vendor == VendorId::Openai {
@@ -256,6 +258,37 @@ fn desktop_profile_labels(_config: &Config) -> Vec<String> {
     Vec::new()
 }
 
+/// Mouse hit-test surface recorded by the last draw and consumed by the event
+/// loop. Draw is the single source of truth for where things are on screen, so
+/// the render pass records the interactive rects here instead of the input
+/// handler re-deriving layout.
+#[derive(Debug, Default, Clone)]
+pub struct HitTargets {
+    /// Vendor navigation entries: Overview first, then each tab by index.
+    pub nav_entries: Vec<(NavTarget, Rect)>,
+    /// Footer actions with a mouse-accessible keyboard equivalent.
+    pub footer_actions: Vec<(FooterAction, Rect)>,
+    /// Settings overlay interactive rows: the primary selector, key fields,
+    /// and save row.
+    pub settings_rows: Vec<(SettingsRow, Rect)>,
+}
+
+/// What a click in the vendor navigation selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavTarget {
+    Overview,
+    Tab(usize),
+}
+
+/// What a click in the footer invokes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FooterAction {
+    Refresh,
+    RefreshAll,
+    Settings,
+    Quit,
+}
+
 #[derive(Debug)]
 pub struct App {
     pub tabs_meta: Vec<TabId>,
@@ -287,6 +320,8 @@ pub struct App {
     pub context: Option<crate::tui::context::ContextState>,
     /// Presentation style for the vendor navigation box (`[ui] vendor_box`).
     pub vendor_box: crate::config::VendorBoxStyle,
+    /// Interactive rects from the most recent draw, for mouse hit-testing.
+    pub hit: std::rc::Rc<std::cell::RefCell<HitTargets>>,
 }
 
 impl App {
@@ -318,6 +353,7 @@ impl App {
             context_generation: 0,
             context: None,
             vendor_box: crate::config::VendorBoxStyle::Sidebar,
+            hit: std::rc::Rc::new(std::cell::RefCell::new(HitTargets::default())),
         }
     }
 
@@ -455,6 +491,27 @@ impl App {
         }
     }
 
+    /// Select the Overview pane (mouse click on the first nav entry).
+    pub fn select_overview(&mut self) {
+        self.overview = true;
+    }
+
+    /// Select a vendor tab by index (mouse click on a nav entry).
+    pub fn select_tab(&mut self, index: usize) {
+        if index < self.tabs_meta.len() {
+            self.active = index;
+            self.overview = false;
+        }
+    }
+
+    /// Apply a mouse click on a vendor-navigation entry.
+    pub fn nav_from_target(&mut self, target: NavTarget) {
+        match target {
+            NavTarget::Overview => self.select_overview(),
+            NavTarget::Tab(index) => self.select_tab(index),
+        }
+    }
+
     /// Tabs the Overview should list: `overview_vendors` filtered against the
     /// live tab set (preserving the config order), or all tabs when unset.
     /// The filter names built-in vendors only, so a configured list excludes
@@ -521,6 +578,22 @@ pub async fn refresh_one(client: &Client, config: &Config, tab: &TabId) -> TabSt
             e.plan().map(str::to_string),
         ),
     }
+}
+
+/// Key and cache for an API-key vendor tab: a named account's key with its own
+/// `<slug>/<label>` cache, or the default key with the vendor-root cache, whose
+/// path never moves (issue #14).
+fn api_key_and_cache(
+    config: &Config,
+    vendor: VendorId,
+    account: Option<&str>,
+) -> Result<(String, crate::cache::Cache)> {
+    let api_key = config.resolve_account_api_key_for(vendor, account)?;
+    let cache = match account {
+        Some(label) => crate::cache::Cache::for_vendor_account(vendor.slug(), label)?,
+        None => crate::cache::Cache::for_vendor(vendor.slug())?,
+    };
+    Ok((api_key, cache))
 }
 
 async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<VendorOutcome> {
@@ -593,11 +666,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Openrouter => {
-            let api_key = config.openrouter.resolve_api_key(tab.account.as_deref())?;
-            let cache = match tab.account.as_deref() {
-                Some(label) => crate::cache::Cache::for_vendor_account("openrouter", label)?,
-                None => crate::cache::Cache::for_vendor("openrouter")?,
-            };
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::openrouter::fetch::Endpoints::default();
             let outcome = crate::openrouter::fetch_snapshot(
                 client,
@@ -610,12 +679,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Zai => {
-            let api_key = crate::config::resolve_api_key(
-                "Zai",
-                &config.zai.api_key_env,
-                config.zai.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("zai")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::zai::fetch::Endpoints::default();
             let outcome = crate::zai::fetch_snapshot(
                 client,
@@ -656,12 +720,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Deepseek => {
-            let api_key = crate::config::resolve_api_key(
-                "DeepSeek",
-                &config.deepseek.api_key_env,
-                config.deepseek.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("deepseek")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::deepseek::fetch::Endpoints::default();
             let outcome =
                 crate::deepseek::fetch_snapshot(client, &api_key, &cache, &endpoints, DEFAULT_TTL)
@@ -682,12 +741,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Kilo => {
-            let api_key = crate::config::resolve_api_key(
-                "Kilo",
-                &config.kilo.api_key_env,
-                config.kilo.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("kilo")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::kilo::fetch::Endpoints::default();
             let outcome = crate::kilo::fetch_snapshot(
                 client,
@@ -701,12 +755,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Novita => {
-            let api_key = crate::config::resolve_api_key(
-                "Novita",
-                &config.novita.api_key_env,
-                config.novita.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("novita")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::novita::fetch::Endpoints::default();
             let outcome =
                 crate::novita::fetch_snapshot(client, &api_key, &cache, &endpoints, DEFAULT_TTL)
@@ -714,12 +763,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Moonshot => {
-            let api_key = crate::config::resolve_api_key(
-                "Moonshot",
-                &config.moonshot.api_key_env,
-                config.moonshot.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("moonshot")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let (endpoints, currency) =
                 crate::moonshot::fetch::Endpoints::for_region(&config.moonshot.region);
             let outcome = crate::moonshot::fetch_snapshot(
@@ -734,12 +778,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Grok => {
-            let key = crate::config::resolve_api_key(
-                "Grok",
-                &config.grok.api_key_env,
-                config.grok.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("grok")?;
+            let (key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::grok::fetch::Endpoints::default();
             let outcome = crate::grok::fetch_snapshot(
                 client,
@@ -814,12 +853,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::Minimax => {
-            let api_key = crate::config::resolve_api_key(
-                "MiniMax",
-                &config.minimax.api_key_env,
-                config.minimax.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("minimax")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::minimax::fetch::Endpoints::for_region(&config.minimax.region);
             let outcome =
                 crate::minimax::fetch_snapshot(client, &api_key, &cache, &endpoints, DEFAULT_TTL)
@@ -932,12 +966,7 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             Ok(outcome.into())
         }
         VendorId::OrcaRouter => {
-            let api_key = crate::config::resolve_api_key(
-                "OrcaRouter",
-                &config.orcarouter.api_key_env,
-                config.orcarouter.api_key.as_deref(),
-            )?;
-            let cache = crate::cache::Cache::for_vendor("orcarouter")?;
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
             let endpoints = crate::orcarouter::fetch::Endpoints::default();
             let outcome = crate::orcarouter::fetch_snapshot(
                 client,
@@ -1078,6 +1107,34 @@ mod tests {
     }
 
     #[test]
+    fn mouse_nav_targets_select_overview_and_tabs() {
+        let mut app = App::with_theme(
+            vec![
+                TabId::vendor(VendorId::Anthropic),
+                TabId::vendor(VendorId::Openai),
+            ],
+            Theme::default(),
+        );
+        app.overview = true;
+        app.nav_from_target(NavTarget::Tab(1));
+        assert!(!app.overview);
+        assert_eq!(app.active, 1);
+        app.nav_from_target(NavTarget::Overview);
+        assert!(app.overview);
+        // Out-of-range tab indices are ignored.
+        app.nav_from_target(NavTarget::Tab(99));
+        assert!(app.overview);
+    }
+
+    #[test]
+    fn hit_targets_default_to_empty() {
+        let app = App::with_theme(Vec::new(), Theme::default());
+        assert!(app.hit.borrow().nav_entries.is_empty());
+        assert!(app.hit.borrow().footer_actions.is_empty());
+        assert!(app.hit.borrow().settings_rows.is_empty());
+    }
+
+    #[test]
     fn overview_tabs_defaults_to_all_and_honors_the_config_filter() {
         let mut app = App::with_theme(
             vec![
@@ -1173,12 +1230,12 @@ mod tests {
         config.zai.enabled = false;
         config.commandcode.enabled = false;
         config.openrouter.accounts = vec![
-            crate::config::OpenRouterAccount {
+            crate::config::ApiKeyAccount {
                 label: "work".into(),
                 api_key_env: Some("OPENROUTER_WORK_API_KEY".into()),
                 api_key: None,
             },
-            crate::config::OpenRouterAccount {
+            crate::config::ApiKeyAccount {
                 label: "personal".into(),
                 api_key_env: None,
                 api_key: Some("personal-key".into()),
@@ -1230,7 +1287,7 @@ mod tests {
         config
             .openrouter
             .accounts
-            .push(crate::config::OpenRouterAccount {
+            .push(crate::config::ApiKeyAccount {
                 label: "work".into(),
                 api_key_env: Some("OPENROUTER_WORK_API_KEY".into()),
                 api_key: None,
@@ -1239,6 +1296,46 @@ mod tests {
             tabs_from_config(&config),
             vec![TabId::account_for(VendorId::Openrouter, "work")]
         );
+    }
+
+    #[test]
+    fn every_api_key_account_vendor_fans_out_like_openrouter() {
+        let config_for = |vendor: VendorId, show_default: bool| -> Config {
+            let section = vendor.config_section();
+            // Switch off the vendors that are on by default, so the tab list
+            // is this vendor's alone.
+            let mut text: String = ["anthropic", "openai", "commandcode", "zai", "openrouter"]
+                .into_iter()
+                .filter(|other| *other != section)
+                .map(|other| format!("[{other}]\nenabled = false\n"))
+                .collect();
+            text.push_str(&format!(
+                "[{section}]\nenabled = true\nshow_default_account = {show_default}\n\
+                 [[{section}.accounts]]\nlabel = \"work\"\napi_key = \"k1\"\n\
+                 [[{section}.accounts]]\nlabel = \"personal\"\napi_key = \"k2\"\n"
+            ));
+            let config: Config = toml::from_str(&text).unwrap();
+            config.validate().unwrap();
+            config
+        };
+        for vendor in Config::API_KEY_ACCOUNT_VENDORS {
+            let named = vec![
+                TabId::account_for(vendor, "work"),
+                TabId::account_for(vendor, "personal"),
+            ];
+            let mut with_default = vec![TabId::vendor(vendor)];
+            with_default.extend(named.clone());
+            assert_eq!(
+                tabs_from_config(&config_for(vendor, true)),
+                with_default,
+                "{vendor:?}"
+            );
+            assert_eq!(
+                tabs_from_config(&config_for(vendor, false)),
+                named,
+                "{vendor:?}"
+            );
+        }
     }
 
     #[test]

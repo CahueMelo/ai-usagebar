@@ -21,7 +21,6 @@ interface DashboardProps {
   onDismissHint: () => void;
   onOpenCustomize: () => void;
   onReorder: (ids: string[]) => void;
-  onResetProvider: (id: string) => void;
   onRowAction: (providerId: string, rowKey: string, action: RowAction) => void;
   onRowMenuOpenChange: (open: boolean) => void;
   onSwitchAccount: (vendor: string, label: string) => void;
@@ -76,7 +75,6 @@ export function Dashboard({
   onDismissHint,
   onOpenCustomize,
   onReorder,
-  onResetProvider,
   onRowAction,
   onRowMenuOpenChange,
   onSwitchAccount,
@@ -129,7 +127,6 @@ export function Dashboard({
                 layout={layout}
                 nowMs={nowMs}
                 onCustomize={() => onCustomizeProvider(card.id)}
-                onReset={() => onResetProvider(card.id)}
                 onRowAction={(key, action) => onRowAction(card.id, key, action)}
                 onRowMenuOpenChange={onRowMenuOpenChange}
                 onSwitchAccount={() => {
