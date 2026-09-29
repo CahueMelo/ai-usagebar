@@ -66,8 +66,11 @@ Panel {
   readonly property var entrySections: entry ? Model.groupedSections(entry.sections) : []
   readonly property bool filterMiss: configuredProvider !== "" && entries.length > 0 && visibleEntries.length === 0
   readonly property bool entryAlarming: shownAlarming()
-  readonly property bool alarming: loadError !== "" || filterMiss
-    || (showAll ? shownAnyAlarming() : entryAlarming)
+  // A cached or failed provider response stays a status line, but a report
+  // that never arrived has nothing else to show on the bar.
+  readonly property bool reportMissing: loadError !== "" && entries.length === 0
+  readonly property bool alarming: (showAll ? shownAnyAlarming() : entryAlarming)
+    || reportMissing
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
@@ -212,7 +215,6 @@ Panel {
 
   function entryIsAlarming(item) {
     if (!item) return false
-    if (item.status === "error" || item.stale === true) return true
     if (isCursorEntry(item) && typeof Model.cursorDualHeadline === "function") {
       var dual = Model.cursorDualHeadline(item, cursorPoolFlags())
       if (dual) return dual.severity === "critical"
@@ -405,7 +407,7 @@ Panel {
       var chipAlarm = chip.alarming
       if (pools.severity === "low" || pools.severity === "mid" || pools.severity === "high"
           || pools.severity === "critical") {
-        chipAlarm = rows[i].status === "error" || rows[i].stale === true || pools.severity === "critical"
+        chipAlarm = pools.severity === "critical"
       }
       next.push({
         brand: chip.brand,
@@ -545,7 +547,7 @@ Panel {
           root.selectEntry(root.entryIndex + dx)
         }
         if (dy !== 0)
-          panelFlick.contentY = root.clamp(panelFlick.contentY + dy * Style.space(56), 0,
+          panelFlick.contentY = root.clamp(panelFlick.contentY + dy * Style.space(96), 0,
             Math.max(0, panelFlick.contentHeight - panelFlick.height))
       }
       onActivateRequested: if (!root.settingsOpen) root.refresh()
@@ -566,6 +568,24 @@ Panel {
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        WheelHandler {
+          target: null
+          enabled: panelFlick.interactive
+          acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+          onWheel: function(event) {
+            if (event.pixelDelta.y === 0 && event.angleDelta.y === 0) {
+              event.accepted = false
+              return
+            }
+            // Keep touchpad motion smooth while covering more of the long settings form.
+            var delta = event.pixelDelta.y !== 0
+              ? event.pixelDelta.y * 5
+              : event.angleDelta.y / 120 * Style.space(144)
+            panelFlick.contentY = root.clamp(panelFlick.contentY - delta,
+              0, Math.max(0, panelFlick.contentHeight - panelFlick.height))
+          }
+        }
 
         Column {
           id: column

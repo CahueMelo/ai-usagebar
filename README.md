@@ -680,7 +680,14 @@ of the reset window in seconds. `window_secs` is present only when the vendor
 states the window (rolling 5h/7d windows; Cursor's billing cycle from
 `billingCycleStart`/`billingCycleEnd`, assumed to be 30 days when the start is
 missing) and is omitted, not `null`, otherwise — a calendar month or an unstated
-window gives a frontend nothing to pace against. Every metric row also carries
+window gives a frontend nothing to pace against. Cursor's On-Demand text row
+may also carry `used_cents`, `limit_cents`, and `percent`: the spend and the
+prepaid cap in USD cents, and how much of that cap is already used (rounded
+half up, and above 100 when spend passes the cap). Those fields are omitted,
+not `null`, when the row is ordinary text or when Cursor reported spend
+without a positive cap. A frontend meters the row from the numbers; `value`
+stays the formatted `$spent / $cap` string other surfaces print. Every metric
+row also carries
 `headline` — `"percent"` or `"value"` — naming which of its two numbers belongs
 on the bar; a frontend draws that one and leaves the other in the detail line,
 rather than inferring a balance row from its label. These fields are additive, so

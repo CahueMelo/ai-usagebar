@@ -469,12 +469,24 @@ jobs:
           # Detached ASCII signatures for every downloadable artifact. The
           # .sha256 sidecars stay unsigned on purpose: they are derived
           # data, and a tampered sidecar makes the checksum check fail
-          # closed against the signed artifact itself.
+          # closed against the signed artifact itself. A passphraseless
+          # key must NOT take the --passphrase-fd path: gpg reads the
+          # empty line and fails with "No passphrase given" (the v1.28.0
+          # first-run failure), so the fd-0 loopback is only wired when a
+          # passphrase actually exists.
+          sign() {
+            if [ -n "${GPG_PASSPHRASE:-}" ]; then
+              gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+                --detach-sign --armor --output "$1.sig" "$1" <<<"$GPG_PASSPHRASE"
+            else
+              gpg --batch --yes --pinentry-mode loopback \
+                --detach-sign --armor --output "$1.sig" "$1"
+            fi
+          }
           shopt -s nullglob
           for f in artifacts/*.tar.gz artifacts/*.zip artifacts/*.exe \
                    artifacts/*-macos-aarch64 artifacts/*-macos-x86_64; do
-            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
-              --detach-sign --armor --output "$f.sig" "$f" <<<"$GPG_PASSPHRASE"
+            sign "$f"
           done
 
           # The public key rides along so verification needs no keyserver.

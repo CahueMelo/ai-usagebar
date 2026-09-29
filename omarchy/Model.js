@@ -63,11 +63,20 @@ function normalizeSection(raw) {
     }
   }
   if (type === "text") {
-    return {
+    var text = {
       type: "text",
       label: cleanText(raw.label, 160),
       value: cleanText(raw.value, 1000)
     }
+    // Cursor's On-Demand row. Kept only as safe integers so a report cannot
+    // smuggle a string or a float in where the meter expects cents.
+    var used = minorUnits(raw.used_cents)
+    var limit = minorUnits(raw.limit_cents)
+    var consumed = minorUnits(raw.percent)
+    if (used !== null) text.used_cents = used
+    if (limit !== null && limit > 0) text.limit_cents = limit
+    if (consumed !== null && consumed >= 0) text.percent = consumed
+    return text
   }
   if (type === "block") {
     var body = Array.isArray(raw.body) ? raw.body : []
@@ -452,8 +461,9 @@ function severityRank(severity) {
   return 0
 }
 
-// "$0.00 / $5.00" is spent / prepaid cap. What remains of that cap is the
-// on-demand balance the user already paid for.
+// Older reports print On-Demand as "$0.00 / $5.00" and nothing else. A
+// current report carries used_cents, limit_cents, and percent, which win.
+// This parser stays for a binary that predates those fields.
 function parseMoneyToken(token) {
   var text = String(token || "").trim()
   var match = text.match(/^(-)?(\D*?)(\d+(?:\.\d+)?)(\D*)$/)
@@ -463,6 +473,23 @@ function parseMoneyToken(token) {
   if (match[1] === "-") amount = -amount
   var places = (match[3].split(".")[1] || "").length
   return { amount: amount, prefix: match[2], suffix: match[4], places: places }
+}
+
+function minorUnits(value) {
+  if (typeof value !== "number" || !isFinite(value) || !Number.isSafeInteger(value)) return null
+  return value
+}
+
+// USD cents, matching fmt_minor(..., 2, "USD"): the sign sits ahead of the
+// symbol, and a zero amount is never "-$0.00".
+function formatUsdCents(cents) {
+  var negative = cents < 0
+  var abs = negative ? -cents : cents
+  var dollars = Math.floor(abs / 100)
+  var frac = abs % 100
+  var body = dollars + "." + (frac < 10 ? "0" : "") + frac
+  if (dollars === 0 && frac === 0) negative = false
+  return (negative ? "-" : "") + "$" + body
 }
 
 function formatMoney(sample, amount) {
@@ -479,10 +506,34 @@ function usageSeverity(percent) {
   return "low"
 }
 
+function onDemandView(usedPct, usedText, limitText, leftText) {
+  return {
+    bar: usedPct + "%",
+    usedPct: usedPct,
+    severity: usageSeverity(usedPct),
+    display: leftText,
+    detail: usedText + " of " + limitText + " used (" + usedPct + "%)",
+    tooltip: "On-demand " + usedText + " of " + limitText + " used (" + usedPct + "%)"
+  }
+}
+
 // Same reading as OpenRouter's credit chip: the percentage is how much of
 // the prepaid balance is already used. The dollars still left stay beside
-// the meter in the panel.
-function onDemandRemaining(value) {
+// the meter in the panel. Cents from the report are the contract; the
+// formatted value is only read when those fields are absent.
+function onDemandFromCents(section) {
+  var used = minorUnits(section.used_cents)
+  var limit = minorUnits(section.limit_cents)
+  if (used === null || limit === null || !(limit > 0)) return null
+  var usedPct = minorUnits(section.percent)
+  if (usedPct === null || usedPct < 0)
+    usedPct = Math.round((Math.max(0, used) / limit) * 100)
+  var spent = Math.max(0, used)
+  var left = Math.max(0, limit - used)
+  return onDemandView(usedPct, formatUsdCents(spent), formatUsdCents(limit), formatUsdCents(left))
+}
+
+function onDemandFromText(value) {
   var text = String(value || "")
   var slash = text.indexOf("/")
   if (slash < 0) return null
@@ -495,14 +546,16 @@ function onDemandRemaining(value) {
   var usedText = formatMoney(used, Math.max(0, used.amount))
   var limitText = formatMoney(limit, limit.amount)
   var leftText = formatMoney(limit, left)
-  return {
-    bar: usedPct + "%",
-    usedPct: usedPct,
-    severity: usageSeverity(usedPct),
-    display: leftText,
-    detail: usedText + " of " + limitText + " used (" + usedPct + "%)",
-    tooltip: "On-demand " + usedText + " of " + limitText + " used (" + usedPct + "%)"
+  return onDemandView(usedPct, usedText, limitText, leftText)
+}
+
+function onDemandRemaining(section) {
+  if (section && typeof section === "object") {
+    var fromCents = onDemandFromCents(section)
+    if (fromCents) return fromCents
+    return onDemandFromText(section.value)
   }
+  return onDemandFromText(section)
 }
 
 function cursorOnDemand(entry) {
@@ -510,7 +563,7 @@ function cursorOnDemand(entry) {
   for (var i = 0; i < sections.length; i++) {
     var section = sections[i]
     if (section && section.type === "text" && section.label === "On-Demand")
-      return onDemandRemaining(section.value)
+      return onDemandRemaining(section)
   }
   return null
 }
@@ -669,7 +722,8 @@ function headline(entry, barWindow) {
 function isAlarming(entry) {
   if (!entry) return false
   var summary = headline(entry)
-  return entry.status === "error" || entry.stale === true || summary.severity === "critical"
+  // Cached and failed fetches stay visible without turning the bar red on their own.
+  return summary.severity === "critical"
 }
 
 function formatDuration(milliseconds) {
@@ -753,7 +807,7 @@ function groupedSections(sections) {
       }
     }
     if (row && row.type === "text" && row.label === "On-Demand") {
-      var left = onDemandRemaining(row.value)
+      var left = onDemandRemaining(row)
       if (left) row = {
         type: "metric",
         label: row.label,

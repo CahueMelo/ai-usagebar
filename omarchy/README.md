@@ -54,14 +54,18 @@ omarchy plugin remove akitaonrails.ai-usagebar
   showing every window and alert state still follows the highest percent.
   `h`/`l` or Left/Right switches provider, `j`/`k` or Up/Down scrolls, `r`,
   Enter, or Space refreshes, Tab moves to the neighboring bar panel, and Esc
-  closes.
+  closes. Mouse-wheel and touchpad scrolling cover long settings forms faster;
+  changes to settings take effect only after the Save button at the bottom.
 - Shell: `omarchy-shell shell summon akitaonrails.ai-usagebar '{}'` opens the
   panel and `omarchy-shell shell hide akitaonrails.ai-usagebar` closes it.
 
 The panel keeps the last successful report visible when a refresh fails and
 labels it accordingly. Provider-level stale cache responses and hard errors
-are shown inline. Absolute reset timestamps are rendered as live countdowns,
-so an open panel stays accurate between network refreshes.
+are shown inline, and unlike the bar's alert state they do not turn that bar
+red: only the highest-percent window decides whether it is alarming, and a
+refresh that yields no report at all still marks it. Absolute reset timestamps
+are rendered as live countdowns, so an open panel stays accurate between
+network refreshes.
 
 ## Settings
 
@@ -181,5 +185,6 @@ node omarchy/model.test.mjs
 runtime, so it is not a reliable standalone check for plugin entry points.
 
 Saving files under an installed user plugin triggers Quattro's plugin hot
-reload. In a source checkout, rerun `omarchy plugin validate .` after changing
-the manifest or entry points.
+reload. If the running shell keeps the old panel after a change, use
+`omarchy restart shell` to reload its QML. In a source checkout, rerun
+`omarchy plugin validate .` after changing the manifest or entry points.

@@ -16,6 +16,35 @@ Each release is also published at
   billing checklist and current-month usage endpoints, convert usage cents to
   dollars, and show prepaid balance, monthly spend, optional limit, and period.
 
+## [1.28.0] — 2026-09-29
+
+### Changed
+
+- **Cursor on-demand in `usage --json` is numeric.** The On-Demand text row
+  carries `used_cents`, `limit_cents`, and `percent` (USD cents and the
+  consumed percent) when Cursor reports a prepaid cap. The Omarchy chip and
+  panel meter read those fields. The formatted `$spent / $cap` value is
+  unchanged for every other surface. A report from an older binary, which has
+  only that formatted value, still works.
+- **The Omarchy bar no longer turns red for a cached or failed refresh.** That alert state now follows the highest-percent window alone, like the Waybar `class` and every other frontend; stale and error text stays in the panel. A refresh that yields no report at all still marks the bar. Thresholds are unchanged.
+
+### Fixed
+
+- **Omarchy panel scrolls long settings forms faster.** Touchpad gestures, mouse wheels, and keyboard steps now cover more of the popup per movement, so the Save button remains reachable without dozens of gestures.
+- **Grok Bot reads its session on Linux when the app used Chromium's
+  `"peanuts"` key.** The Grok Bot desktop app picks its OSCrypt key at runtime
+  from whichever Secret Service backend Electron selected, and encrypts with
+  `"peanuts"` whenever that backend is `basic_text`. A machine can therefore
+  hold an `application="Grok Bot"` keyring item while the blobs in
+  `sand-secrets.json` were keyed with `"peanuts"` — and the reader preferred
+  the item's key, so every token failed to decrypt and the bar reported
+  "a stored token could not be decrypted; sign in to the Grok Bot desktop app
+  again" for a session that was perfectly valid. Both keys are now tried, most
+  specific first; a wrong AES key almost always fails PKCS#7 unpadding, so the
+  right candidate is effectively ruled in. No configuration, re-login or
+  keyring change is needed, and a genuinely unreadable file still reports the
+  same error it always did.
+
 ## [1.27.0] — 2026-09-28
 
 ### Added
@@ -3235,7 +3264,8 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.27.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.28.0...HEAD
+[1.28.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.24.0...v1.25.0
