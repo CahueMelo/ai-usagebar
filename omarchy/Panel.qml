@@ -46,6 +46,9 @@ Panel {
   readonly property bool showProvider: Model.booleanSetting(setting("showProvider", false), false)
   readonly property bool showAll: Model.booleanSetting(setting("showAll", false), false)
   readonly property string barWindow: Model.normalizeBarWindow(setting("barWindow", "auto"))
+  readonly property bool showCursorModels: Model.booleanSetting(setting("showCursorModels", true), true)
+  readonly property bool showCursorOther: Model.booleanSetting(setting("showCursorOther", true), true)
+  readonly property bool showCursorOnDemand: Model.booleanSetting(setting("showCursorOnDemand", true), true)
   readonly property var visibleEntries: Model.filteredEntries(entries, configuredProvider)
   readonly property int entryIndex: Model.selectedIndex(visibleEntries, selectedEntryId)
   readonly property var entry: entryIndex >= 0 ? visibleEntries[entryIndex] : null
@@ -59,11 +62,12 @@ Panel {
   // matching every other frontend (Waybar class, KDE isAlarming, TUI).
   // Grouped sub-rows (SuperGrok's product slices) gain a heading row here so
   // they render as a breakdown of the meter above, not peers of it.
+  readonly property bool cursorEntry: isCursorEntry(entry)
   readonly property var entrySections: entry ? Model.groupedSections(entry.sections) : []
   readonly property bool filterMiss: configuredProvider !== "" && entries.length > 0 && visibleEntries.length === 0
-  readonly property bool entryAlarming: Model.isAlarming(entry)
+  readonly property bool entryAlarming: shownAlarming()
   readonly property bool alarming: loadError !== "" || filterMiss
-    || (showAll ? Model.anyAlarming(visibleEntries) : entryAlarming)
+    || (showAll ? shownAnyAlarming() : entryAlarming)
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
@@ -145,6 +149,85 @@ Panel {
     var next = Model.normalizeBarWindow(value)
     if (next === barWindow) return
     persistWidgetSettings({ barWindow: next })
+  }
+
+  function isCursorEntry(item) {
+    if (!item) return false
+    var id = String(item.id || "")
+    var at = id.indexOf("@")
+    return (at < 0 ? id : id.slice(0, at)) === "cursor"
+  }
+
+  function cursorPoolFlags() {
+    return {
+      models: showCursorModels,
+      other: showCursorOther,
+      demand: showCursorOnDemand
+    }
+  }
+
+  function cursorShownFlags() {
+    if (typeof Model.cursorBarFlags === "function")
+      return Model.cursorBarFlags(entry, cursorPoolFlags())
+    return cursorPoolFlags()
+  }
+
+  function cursorPoolOn(id) {
+    return cursorShownFlags()[id] === true
+  }
+
+  function cursorPoolCanTurnOff(id) {
+    var flags = cursorShownFlags()
+    if (flags[id] !== true) return false
+    var count = (flags.models ? 1 : 0) + (flags.other ? 1 : 0) + (flags.demand ? 1 : 0)
+    return count > 1
+  }
+
+  function cursorPoolButtons() {
+    var has = typeof Model.cursorPoolPresence === "function"
+      ? Model.cursorPoolPresence(entry)
+      : { models: true, other: true, demand: true }
+    var rows = []
+    if (has.models) rows.push({ poolId: "models", label: "Cursor Models" })
+    if (has.other) rows.push({ poolId: "other", label: "Other Models" })
+    if (has.demand) rows.push({ poolId: "demand", label: "On-Demand" })
+    return rows
+  }
+
+  function toggleCursorPool(id) {
+    var saved = cursorPoolFlags()
+    var shown = cursorShownFlags()
+    var next = Model.toggleCursorPool(shown, id)
+    if (next.models === shown.models && next.other === shown.other
+        && next.demand === shown.demand) return
+    var has = typeof Model.cursorPoolPresence === "function"
+      ? Model.cursorPoolPresence(entry)
+      : { models: true, other: true, demand: true }
+    persistWidgetSettings({
+      showCursorModels: has.models ? next.models : saved.models,
+      showCursorOther: has.other ? next.other : saved.other,
+      showCursorOnDemand: has.demand ? next.demand : saved.demand
+    })
+  }
+
+  function entryIsAlarming(item) {
+    if (!item) return false
+    if (item.status === "error" || item.stale === true) return true
+    if (isCursorEntry(item) && typeof Model.cursorDualHeadline === "function") {
+      var dual = Model.cursorDualHeadline(item, cursorPoolFlags())
+      if (dual) return dual.severity === "critical"
+    }
+    return Model.isAlarming(item)
+  }
+
+  function shownAlarming() {
+    return entryIsAlarming(entry)
+  }
+
+  function shownAnyAlarming() {
+    for (var i = 0; i < visibleEntries.length; i++)
+      if (entryIsAlarming(visibleEntries[i])) return true
+    return false
   }
 
   function selectEntry(index) {
@@ -246,15 +329,111 @@ Panel {
     return Model.autoTextSafe(text)
   }
 
-  readonly property var barChips: Model.barChips(
-    visibleEntries, entry, showAll, showValue, showProvider, loading, alarming, vertical, barWindow)
+  // Cursor reports two model pools, and the bar must show both. Reading the
+  // sections here keeps the chip correct even when a hot reload is still
+  // holding an older copy of Model.js, which only kept the higher pool.
+  function cursorPools(item) {
+    if (typeof Model.cursorDualHeadline === "function") {
+      var dual = Model.cursorDualHeadline(item, cursorPoolFlags())
+      if (dual && dual.text) return {
+        text: dual.text,
+        tooltip: dual.tooltip || dual.text,
+        severity: dual.severity
+      }
+    }
+    if (!item) return null
+    var id = String(item.id || "")
+    var at = id.indexOf("@")
+    if ((at < 0 ? id : id.slice(0, at)) !== "cursor") return null
+    var sections = item.sections || []
+    var auto = null
+    var api = null
+    for (var i = 0; i < sections.length; i++) {
+      var row = sections[i]
+      if (!row || row.type !== "metric") continue
+      if (row.label === "Cursor Models") auto = row.percent
+      else if (row.label === "Other Models") api = row.percent
+    }
+    if (auto === null || api === null || auto === undefined || api === undefined) return null
+    return {
+      text: auto + "% · " + api + "%",
+      tooltip: "Cursor Models " + auto + "% · Other Models " + api + "%"
+    }
+  }
+
+  function panelHeadline(item) {
+    if (isCursorEntry(item) && typeof Model.cursorDualHeadline === "function") {
+      var dual = Model.cursorDualHeadline(item)
+      if (dual && dual.text) return dual.text
+    }
+    return usageText(item, false)
+  }
+
+  function usageText(item, rich) {
+    var pools = cursorPools(item)
+    if (pools) return rich ? pools.tooltip : pools.text
+    var head = Model.headline(item, barWindow)
+    return rich ? (head.tooltip || head.text) : head.text
+  }
+
+  function shownEntries() {
+    if (showAll) return visibleEntries
+    if (entry) return [entry]
+    return visibleEntries.length > 0 ? [visibleEntries[0]] : []
+  }
+
+  readonly property var barChips: labeledChips()
+
+  function labeledChips() {
+    var chips = Model.barChips(
+      visibleEntries, entry, showAll, showValue, showProvider, loading, alarming, vertical, barWindow)
+    if (!showValue || vertical) return chips
+    var rows = shownEntries()
+    var next = []
+    for (var i = 0; i < chips.length; i++) {
+      var chip = chips[i]
+      var pools = i < rows.length ? cursorPools(rows[i]) : null
+      if (!pools || chip.label === "!") {
+        next.push(chip)
+        continue
+      }
+      var label = pools.text
+      if (showProvider) {
+        var provider = Model.providerShort(rows[i])
+        if (provider !== "") label = provider + " " + label
+      }
+      var chipAlarm = chip.alarming
+      if (pools.severity === "low" || pools.severity === "mid" || pools.severity === "high"
+          || pools.severity === "critical") {
+        chipAlarm = rows[i].status === "error" || rows[i].stale === true || pools.severity === "critical"
+      }
+      next.push({
+        brand: chip.brand,
+        icon: chip.icon,
+        label: label,
+        alarming: chipAlarm
+      })
+    }
+    return next
+  }
 
   function barText() {
     if (showAll)
       return Model.barStrip(visibleEntries, alarming, vertical, showValue, showProvider, loading, barWindow)
+    var value = entry ? usageText(entry, false) : summary.text
     return Model.barLabel(alarming, vertical, showValue, loading,
-      entry !== null, summary.text, showProvider ? Model.providerShort(entry) : "",
+      entry !== null, value, showProvider ? Model.providerShort(entry) : "",
       Model.providerIcon(entry))
+  }
+
+  function tooltipLines(item) {
+    var raw = String(usageText(item, true) || "").split("\n")
+    var lines = []
+    for (var i = 0; i < raw.length; i++) {
+      var line = Model.autoTextSafe(raw[i]).trim()
+      if (line !== "") lines.push(line)
+    }
+    return lines
   }
 
   function tooltipText() {
@@ -262,17 +441,27 @@ Panel {
       var chips = []
       for (var i = 0; i < visibleEntries.length; i++) {
         var item = visibleEntries[i]
+        var lines = tooltipLines(item)
+        if (lines.length > 1) {
+          if (item.stale) lines[lines.length - 1] += " · cached"
+          chips.push(lines.join("\n"))
+          continue
+        }
         var bit = Model.providerName(item)
-        var value = Model.autoTextSafe(Model.headline(item, barWindow).text).trim()
-        if (value !== "") bit += " · " + value
+        if (lines.length === 1) bit += " · " + lines[0]
         if (item.stale) bit += " · cached"
         chips.push(bit)
       }
       return chips.join("\n")
     }
     if (!entry) return Model.autoTextSafe(statusMessage() || "AI usage")
+    var entryLines = tooltipLines(entry)
+    if (entryLines.length > 1) {
+      if (entry.stale) entryLines[entryLines.length - 1] += " · cached"
+      return entryLines.join("\n")
+    }
     var text = Model.providerName(entry)
-    if (summary.text !== "") text += " · " + Model.autoTextSafe(summary.text)
+    if (entryLines.length === 1) text += " · " + entryLines[0]
     if (entry.stale) text += " · cached"
     return text
   }
@@ -398,7 +587,7 @@ Panel {
             meta: root.settingsOpen ? "Display, provider & API keys" : root.heroMeta()
             detail: root.settingsOpen
               ? "Existing configuration stays in place until you save."
-              : (root.entry && root.summary.text !== "Ready" ? Model.autoTextSafe(root.summary.text) : "")
+              : (root.entry && root.summary.text !== "Ready" ? Model.autoTextSafe(root.panelHeadline(root.entry)) : "")
             foreground: root.foreground
             fontFamily: root.fontFamily
 
@@ -493,6 +682,35 @@ Panel {
                   root.selectEntry(index)
                 }
                 onHovered: function(isHovered) { if (isHovered) root.cursorActive = true }
+              }
+            }
+          }
+
+          Flow {
+            id: cursorPoolToggles
+            visible: !root.settingsOpen && root.cursorEntry
+            width: parent.width
+            height: visible ? childrenRect.height : 0
+            flow: Flow.LeftToRight
+            spacing: Style.spacing.md
+
+            Repeater {
+              model: root.cursorPoolButtons()
+
+              delegate: Button {
+                required property var modelData
+
+                height: Style.spacing.controlHeight
+                width: implicitWidth
+                text: modelData.label
+                selected: root.cursorPoolOn(modelData.poolId)
+                enabled: root.cursorPoolCanTurnOff(modelData.poolId) || !root.cursorPoolOn(modelData.poolId)
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                verticalPadding: Style.spacing.controlPaddingY
+                onClicked: root.toggleCursorPool(modelData.poolId)
               }
             }
           }

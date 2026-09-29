@@ -141,7 +141,7 @@ export function Footer({
           <DropdownMenuSeparator />
           <MenuItem icon={<MdiUpdate />} label={m.check_for_updates()} onSelect={onCheckUpdates} />
           <MenuItem icon={<MdiInformationOutline />} label={m.about()} onSelect={onOpenAbout} />
-          <MenuItem destructive icon={<MdiPower />} label={m.quit()} onSelect={() => sendCommand("quit")} />
+          <MenuItem icon={<MdiPower />} label={m.quit()} onSelect={() => sendCommand("quit")} />
         </DropdownMenuContent>
       </DropdownMenu>
     </footer>
@@ -150,7 +150,6 @@ export function Footer({
 
 interface MenuItemProps {
   checked?: boolean;
-  destructive?: boolean;
   icon: ReactNode;
   label: string;
   onSelect: () => void;
@@ -162,9 +161,9 @@ function startupIcon(os: string) {
   return <MdiLoginVariant />;
 }
 
-function MenuItem({ checked, destructive, icon, label, onSelect }: MenuItemProps) {
+function MenuItem({ checked, icon, label, onSelect }: MenuItemProps) {
   return (
-    <DropdownMenuItem variant={destructive ? "destructive" : "default"} onSelect={onSelect}>
+    <DropdownMenuItem onSelect={onSelect}>
       {icon}
       <span className="flex-1">{label}</span>
       {checked ? <span aria-label={m.on()}>✓</span> : null}

@@ -16,6 +16,75 @@ Each release is also published at
   billing checklist and current-month usage endpoints, convert usage cents to
   dollars, and show prepaid balance, monthly spend, optional limit, and period.
 
+## [1.27.0] — 2026-09-28
+
+### Added
+
+- **`account merge-history` for relocated Claude Desktop profiles (macOS).**
+  Merges every account's sessions and schedules into whichever account a given
+  profile is signed into, without swapping a credential or touching the app:
+  `ai-usagebar account merge-history --data-dir <DIR> [--from <DIR>]...`.
+  Intended for side-by-side Desktop copies launched with `--user-data-dir`,
+  where `account switch` cannot be used because it installs a stored token
+  over the profile's live login and quits the app by application name. The
+  merge is additive — no deletion sweep runs, so an unattended run cannot lose
+  history — sources are opened read-only, and a second run is a no-op. Note
+  that it deliberately crosses accounts: afterwards one account's window lists
+  conversations started under the others.
+- **GNOME menu supports all enabled providers.** Native submenus display
+  the shared usage report, including Cursor, named accounts and custom
+  providers, with metric labels, balances, errors and reset details supplied
+  by the binary. Collapsed rows preview the first two metrics in report order,
+  retaining their labels and groups, with optional mini bars and symbolic
+  provider icons. Menu preferences offer values only, hidden icons and compact
+  spacing. The top bar continues to follow its vendor preference.
+- **Omarchy bar shows both Cursor pools and prepaid on-demand.** The Quattro
+  chip lists Cursor Models, Other Models, and on-demand used percent in that
+  order (`35% · 7% · 0%`), the same consumed-percent reading OpenRouter uses
+  for a credit balance. The tooltip is one short line per pool. Three switches
+  on the Cursor page turn those figures on and off in the top bar and tooltip
+  only; the open panel still lists every pool, and the last remaining figure
+  cannot be turned off. A pool the report does not contain, such as on-demand
+  with no prepaid row, does not count as that last figure. The bar's urgent
+  color follows the pools still on the chip.
+- The TUI vendor menu is now navigated with the Up/Down arrow keys (wrapping),
+  with `Tab`/`Shift+Tab`/`←`/`→`/`h`/`l` kept as secondary shortcuts. Mouse
+  clicks work in the TUI: click a vendor menu entry to select it, click a
+  footer action to refresh, refresh all, open Settings, or quit, click a
+  Settings field to focus it, or click **Save** to save. In Settings the
+  on/off cells toggle their provider (or the quota-alerts switch) and the
+  focused Primary vendor's ◀/▶ arrows step the radio; the hint line is
+  clickable too: save, close, toggle, reveal and change-vendor segments send
+  their key through the same handler.
+
+### Changed
+
+- **Right-clicking the tray icon opens the Options menu.** On macOS a
+  right-click on the menu bar item no longer opens the popover like a
+  left-click: it shows the footer's Options menu as a native menu —
+  Customize (Classic only), Settings, Refresh, Detect Providers, Open TUI,
+  Start at Login, Check for Updates…, About, Quit — in the popover's
+  language, and the items that name a screen open the popover on that
+  screen. The Windows right-click menu, which had only Refresh, Detect
+  Providers, Open TUI, Start with Windows and Quit, is now the same menu.
+- **Refresh lives in the Options menu only.** The ↺ button in each provider
+  card's header was Reset, not Refresh: one click threw away that
+  provider's row order and visibility. It is gone from the dashboard (Reset
+  stays in the provider's Customize screen, behind a second click), and the
+  row menu's per-provider Refresh went with it; Options → Refresh updates
+  every provider.
+- **Quit in the Options menu is no longer red.** It uses the same color as
+  the other items.
+
+### Fixed
+
+- **GNOME Shell 45–46 compatibility.** Vertical menu rows now use the
+  layout property available in the running Shell, avoiding the unsupported
+  `orientation` property on older versions. The extension had failed to
+  enable on Shell 45 and 46 since it first shipped (#272).
+- **GNOME preferences display literal labels correctly.** The pool description
+  and colour labels no longer treat `&` and `<` as markup.
+
 ## [1.26.0] — 2026-09-27
 
 ### Added
@@ -3166,7 +3235,8 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.27.0...HEAD
+[1.27.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.23.0...v1.24.0

@@ -445,8 +445,203 @@ function selectMetric(entry, barWindow) {
   return maxPercent(candidates)
 }
 
+function severityRank(severity) {
+  if (severity === "critical") return 3
+  if (severity === "high") return 2
+  if (severity === "mid") return 1
+  return 0
+}
+
+// "$0.00 / $5.00" is spent / prepaid cap. What remains of that cap is the
+// on-demand balance the user already paid for.
+function parseMoneyToken(token) {
+  var text = String(token || "").trim()
+  var match = text.match(/^(-)?(\D*?)(\d+(?:\.\d+)?)(\D*)$/)
+  if (!match) return null
+  var amount = Number(match[3])
+  if (!isFinite(amount)) return null
+  if (match[1] === "-") amount = -amount
+  var places = (match[3].split(".")[1] || "").length
+  return { amount: amount, prefix: match[2], suffix: match[4], places: places }
+}
+
+function formatMoney(sample, amount) {
+  var negative = amount < 0
+  var abs = Math.abs(amount)
+  var body = sample.places > 0 ? abs.toFixed(sample.places) : String(Math.round(abs))
+  return (negative ? "-" : "") + sample.prefix + body + sample.suffix
+}
+
+function usageSeverity(percent) {
+  if (percent >= 90) return "critical"
+  if (percent >= 75) return "high"
+  if (percent >= 50) return "mid"
+  return "low"
+}
+
+// Same reading as OpenRouter's credit chip: the percentage is how much of
+// the prepaid balance is already used. The dollars still left stay beside
+// the meter in the panel.
+function onDemandRemaining(value) {
+  var text = String(value || "")
+  var slash = text.indexOf("/")
+  if (slash < 0) return null
+  var used = parseMoneyToken(text.slice(0, slash))
+  var limit = parseMoneyToken(text.slice(slash + 1))
+  if (!used || !limit || !(limit.amount > 0)) return null
+  var factor = Math.pow(10, limit.places)
+  var left = Math.max(0, Math.round((limit.amount - used.amount) * factor) / factor)
+  var usedPct = Math.round((Math.max(0, used.amount) / limit.amount) * 100)
+  var usedText = formatMoney(used, Math.max(0, used.amount))
+  var limitText = formatMoney(limit, limit.amount)
+  var leftText = formatMoney(limit, left)
+  return {
+    bar: usedPct + "%",
+    usedPct: usedPct,
+    severity: usageSeverity(usedPct),
+    display: leftText,
+    detail: usedText + " of " + limitText + " used (" + usedPct + "%)",
+    tooltip: "On-demand " + usedText + " of " + limitText + " used (" + usedPct + "%)"
+  }
+}
+
+function cursorOnDemand(entry) {
+  var sections = entry && Array.isArray(entry.sections) ? entry.sections : []
+  for (var i = 0; i < sections.length; i++) {
+    var section = sections[i]
+    if (section && section.type === "text" && section.label === "On-Demand")
+      return onDemandRemaining(section.value)
+  }
+  return null
+}
+
+function cursorPoolPresence(entry) {
+  var sections = entry && Array.isArray(entry.sections) ? entry.sections : []
+  var models = false
+  var other = false
+  for (var i = 0; i < sections.length; i++) {
+    var section = sections[i]
+    if (!section || section.type !== "metric") continue
+    if (section.label === "Cursor Models") models = true
+    else if (section.label === "Other Models") other = true
+  }
+  return { models: models, other: other, demand: cursorOnDemand(entry) !== null }
+}
+
+// Fixed display order. A missing or unknown flag stays on, and turning the
+// last one off is refused so the bar never goes blank.
+function cursorPoolVisibility(flags) {
+  var models = !(flags && flags.models === false)
+  var other = !(flags && flags.other === false)
+  var demand = !(flags && flags.demand === false)
+  if (!models && !other && !demand) models = true
+  return { models: models, other: other, demand: demand }
+}
+
+function toggleCursorPool(flags, id) {
+  var current = cursorPoolVisibility(flags)
+  var next = { models: current.models, other: current.other, demand: current.demand }
+  if (id === "models") next.models = !next.models
+  else if (id === "other") next.other = !next.other
+  else if (id === "demand") next.demand = !next.demand
+  else return current
+  if (!next.models && !next.other && !next.demand) return current
+  return next
+}
+
+// Flags the chip can actually draw. A switch whose pool is absent (on-demand
+// with no prepaid row) does not count, and when that would leave the bar
+// blank the first pool that does exist stays on. Models win that fallback.
+function cursorBarFlags(entry, flags) {
+  var show = cursorPoolVisibility(flags)
+  var has = cursorPoolPresence(entry)
+  var visible = {
+    models: show.models && has.models,
+    other: show.other && has.other,
+    demand: show.demand && has.demand
+  }
+  if (!visible.models && !visible.other && !visible.demand) {
+    if (has.models) visible.models = true
+    else if (has.other) visible.other = true
+    else if (has.demand) visible.demand = true
+  }
+  return visible
+}
+
+// Cursor's included usage is two model pools, not two time windows, so the
+// 5-hour / weekly / monthly pin does not describe them. Visible pools stay in
+// dashboard order: Cursor Models, then Other Models, then prepaid on-demand
+// as a used percentage, the same way OpenRouter shows a credit balance.
+// Severity follows whichever visible pool is furthest along.
+function cursorDualHeadline(entry, flags) {
+  if (baseProvider(entry && entry.id) !== "cursor") return null
+  var sections = Array.isArray(entry.sections) ? entry.sections : []
+  var auto = null
+  var api = null
+  for (var i = 0; i < sections.length; i++) {
+    var section = sections[i]
+    if (!section || section.type !== "metric") continue
+    if (section.label === "Cursor Models") auto = section
+    else if (section.label === "Other Models") api = section
+  }
+  if (!auto || !api) return null
+  var show = cursorBarFlags(entry, flags)
+  var demand = cursorOnDemand(entry)
+  var parts = []
+  if (show.models) parts.push({
+    text: auto.percent + "%",
+    line: "Cursor Models · " + auto.percent + "%",
+    percent: auto.percent,
+    severity: auto.severity
+  })
+  if (show.other) parts.push({
+    text: api.percent + "%",
+    line: "Cursor Other Models · " + api.percent + "%",
+    percent: api.percent,
+    severity: api.severity
+  })
+  if (show.demand && demand) parts.push({
+    text: demand.bar,
+    line: "Cursor On Demand · " + demand.usedPct + "%",
+    percent: demand.usedPct,
+    severity: demand.severity
+  })
+  if (parts.length === 0) {
+    parts.push({
+      text: auto.percent + "%",
+      line: "Cursor Models · " + auto.percent + "%",
+      percent: auto.percent,
+      severity: auto.severity
+    })
+  }
+  var worse = parts[0]
+  for (var p = 1; p < parts.length; p++) {
+    var part = parts[p]
+    if (part.percent > worse.percent
+        || (part.percent === worse.percent && severityRank(part.severity) > severityRank(worse.severity)))
+      worse = part
+  }
+  var texts = []
+  var lines = []
+  for (var n = 0; n < parts.length; n++) {
+    texts.push(parts[n].text)
+    lines.push(parts[n].line)
+  }
+  var text = texts.join(" · ")
+  var tooltip = lines.join("\n")
+  return {
+    text: text,
+    tooltip: tooltip,
+    percent: worse.percent,
+    severity: worse.severity,
+    label: "Cursor Models · Other Models"
+  }
+}
+
 function headline(entry, barWindow) {
   if (!entry) return { text: "", percent: null, severity: "low", label: "" }
+  var dual = cursorDualHeadline(entry)
+  if (dual) return dual
   var best = selectMetric(entry, barWindow)
   if (best) {
     // The metric names which of its two numbers goes on the bar; the other one
@@ -555,6 +750,21 @@ function groupedSections(sections) {
       if (group !== "" && !seen[group]) {
         seen[group] = true
         out.push({ type: "text", label: group, value: "" })
+      }
+    }
+    if (row && row.type === "text" && row.label === "On-Demand") {
+      var left = onDemandRemaining(row.value)
+      if (left) row = {
+        type: "metric",
+        label: row.label,
+        percent: left.usedPct,
+        value: left.display,
+        headline: "percent",
+        detail: left.detail,
+        severity: left.severity,
+        reset_at: "",
+        window_secs: null,
+        group: ""
       }
     }
     out.push(row)
