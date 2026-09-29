@@ -15,6 +15,7 @@ use crate::cache::{Cache, DEFAULT_TTL};
 use crate::config::Config;
 use crate::copilot;
 use crate::cursor;
+use crate::deepinfra;
 use crate::deepseek;
 use crate::error::{AppError, Result};
 use crate::grok;
@@ -154,6 +155,7 @@ async fn build_output(cli: &Cli) -> Result<WaybarOutput> {
         Vendor::Copilot => copilot_output(cli, &config).await,
         Vendor::Zai => zai_output(cli, &config).await,
         Vendor::Deepseek => deepseek_output(cli, &config).await,
+        Vendor::Deepinfra => deepinfra_output(cli, &config).await,
         Vendor::Kimi => kimi_output(cli, &config).await,
         Vendor::Kilo => kilo_output(cli, &config).await,
         Vendor::Novita => novita_output(cli, &config).await,
@@ -182,7 +184,7 @@ fn validate_vendor_options(cli: &Cli, vendor: Vendor) -> Result<()> {
         return Err(AppError::Other(
             "--account is supported only for Claude, Codex (OpenAI), and the API-key \
              vendors with a [[<vendor>.accounts]] array: Z.AI, OpenRouter, DeepSeek, \
-             Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter"
+             DeepInfra, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter"
                 .into(),
         ));
     }
@@ -858,6 +860,34 @@ async fn deepseek_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
     Ok(deepseek::vendor::render(
         &vendor_outcome,
         &snap,
+        &theme,
+        &opts,
+        chrono::Utc::now(),
+    ))
+}
+
+async fn deepinfra_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
+    let (api_key, cache) = api_key_target(cli, config, VendorId::Deepinfra)?;
+    let client = http_client()?;
+    let endpoints = deepinfra::fetch::Endpoints::default();
+    let outcome =
+        match deepinfra::fetch::fetch_snapshot(&client, &api_key, &cache, &endpoints, DEFAULT_TTL)
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(error) if error.is_transient() => {
+                return Ok(WaybarOutput::loading(cli.icon.as_deref()));
+            }
+            Err(error) => return Err(error),
+        };
+
+    let theme = theme_from_cli(cli);
+    let snapshot = outcome.snapshot.clone();
+    let vendor_outcome: VendorOutcome = outcome.into();
+    let opts = RenderOpts::from_cli(cli);
+    Ok(deepinfra::vendor::render(
+        &vendor_outcome,
+        &snapshot,
         &theme,
         &opts,
         chrono::Utc::now(),

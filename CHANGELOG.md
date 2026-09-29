@@ -9,6 +9,13 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **Native DeepInfra billing support.** The widget, TUI, aggregate report, and
+  named API-key accounts now read `DEEPINFRA_API_KEY`, combine the documented
+  billing checklist and current-month usage endpoints, convert usage cents to
+  dollars, and show prepaid balance, monthly spend, optional limit, and period.
+
 ## [1.26.0] — 2026-09-27
 
 ### Added

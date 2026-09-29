@@ -304,6 +304,10 @@ pub fn compact_cells(snapshot: &VendorSnapshot) -> (String, Vec<(String, PaceSev
             }],
         ),
         VendorSnapshot::Deepseek(s) => (String::new(), vec![money_cell(s.balance, &s.currency)]),
+        VendorSnapshot::Deepinfra(s) => (
+            String::new(),
+            vec![(usd(s.balance), crate::deepinfra::vendor::severity(s))],
+        ),
         VendorSnapshot::Kimi(s) => {
             let mut cells = vec![pct("5h", s.window_pct())];
             if s.has_weekly {
@@ -506,6 +510,7 @@ pub fn headline_pct(snapshot: &VendorSnapshot) -> Option<i32> {
         VendorSnapshot::Openrouter(_)
         | VendorSnapshot::OrcaRouter(_)
         | VendorSnapshot::Deepseek(_)
+        | VendorSnapshot::Deepinfra(_)
         | VendorSnapshot::Kilo(_)
         | VendorSnapshot::Novita(_)
         | VendorSnapshot::Moonshot(_)
@@ -571,6 +576,7 @@ pub(crate) fn sections_with_metadata_for(
                 VendorSnapshot::Openrouter(s) => openrouter_sections(s, prefs),
                 VendorSnapshot::OrcaRouter(s) => orcarouter_sections(s, now),
                 VendorSnapshot::Deepseek(s) => deepseek_sections(s, prefs),
+                VendorSnapshot::Deepinfra(s) => deepinfra_sections(s, prefs),
                 VendorSnapshot::Kimi(s) => kimi_sections(s, now, pace_tolerance),
                 VendorSnapshot::Kilo(s) => kilo_sections(s, prefs),
                 VendorSnapshot::Novita(s) => novita_sections(s, prefs),
@@ -1691,6 +1697,52 @@ fn deepseek_sections(s: &crate::usage::DeepseekSnapshot, prefs: DisplayPrefs) ->
         body: vec![avail.into()],
     });
     v
+}
+
+fn deepinfra_sections(
+    snapshot: &crate::usage::DeepInfraSnapshot,
+    prefs: DisplayPrefs,
+) -> SectionBuilder {
+    let mut sections = SectionBuilder::new(vec![Section::Title {
+        left: "DeepInfra".into(),
+        right: None,
+    }]);
+    sections.push(Section::Spacer);
+    push_balance_headline(
+        &mut sections,
+        "Balance",
+        snapshot.balance,
+        "USD",
+        crate::deepinfra::vendor::severity(snapshot),
+        None,
+        prefs,
+    );
+    sections.push(Section::Spacer);
+    match snapshot.monthly_limit {
+        Some(limit) if limit > 0.0 => {
+            let percent = snapshot.monthly_consumed_pct().unwrap_or_default();
+            sections.push(Section::Metric {
+                label: "Monthly usage".into(),
+                pct: percent.clamp(0, 100) as u16,
+                severity: severity_for(percent),
+                value_label: format!("{} / {}", usd(snapshot.monthly_spend), usd(limit)),
+                footnote: format!("{percent}% used in {}", snapshot.period),
+            });
+        }
+        Some(limit) => sections.push(Section::Text {
+            label: "Monthly usage".into(),
+            value: format!("{} / {}", usd(snapshot.monthly_spend), usd(limit)),
+        }),
+        None => sections.push(Section::Text {
+            label: "Monthly usage".into(),
+            value: format!("{} / no limit", usd(snapshot.monthly_spend)),
+        }),
+    }
+    sections.push(Section::Text {
+        label: "Period".into(),
+        value: snapshot.period.clone(),
+    });
+    sections
 }
 
 /// Kimi reports each quota as used/limit against a limit of 100, so the pair
