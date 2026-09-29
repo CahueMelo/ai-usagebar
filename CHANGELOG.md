@@ -9,6 +9,24 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Antigravity keeps reporting with only the `agy` CLI installed.** The saved
+  Google session lasts about an hour and only a running Antigravity renews it;
+  with the desktop app closed nothing did, so the widget fell to "session
+  expired and ai-usagebar has no OAuth client" until the user ran `agy`
+  themselves. When the session is expired and no OAuth client is configured,
+  the fetch now runs `agy models` (no TTY, no prompt, read-only; it rewrites
+  the saved credential as a side effect) and reads the credential again. `agy`
+  is found on `PATH`, then in `~/.local/bin`. The run is bounded to 25 seconds
+  and attempted at most once every ten minutes, failures included, so a dead
+  refresh token never turns into a spawn per poll. `agy`'s own background
+  updater is switched off for that run (`AGY_CLI_DISABLE_AUTO_UPDATE=true`):
+  on Windows it opens a console window of its own that no flag on our spawn
+  can hide. Configuring
+  `oauth_client_id` and `oauth_client_secret` still refreshes directly and
+  never spawns anything.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed
