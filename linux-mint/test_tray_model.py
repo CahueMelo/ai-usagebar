@@ -40,37 +40,52 @@ class TrayModelTest(unittest.TestCase):
             self.assertEqual(installed_binary("ai-usagebar", str(home)), str(custom))
             self.assertEqual(installed_binary("ai-usagebar", str(home), str(cargo)), str(cargo))
 
-    def test_projection_controls_color_and_flame(self):
+    def test_projection_sets_color_and_flame_with_a_tolerance(self):
         ahead = metric_pace(metric(10), NOW, "pt_BR")
         near = metric_pace(metric(19), NOW, "pt_BR")
+        over = metric_pace(metric(24), NOW, "pt_BR")
         behind = metric_pace(metric(30), NOW, "pt_BR")
         self.assertEqual(ahead, ("ahead", None))
         self.assertEqual(near, ("near", "~5% de folga"))
+        self.assertEqual(over, ("over", "~20% acima do ritmo"))
         self.assertEqual(behind, ("behind", "🔥 Limite em 2h 20m"))
         self.assertEqual(meter_color(metric(10), ahead), "blue")
-        self.assertEqual(meter_color(metric(19), near), "yellow")
+        self.assertEqual(meter_color(metric(19), near), "blue")
+        self.assertEqual(meter_color(metric(24), over), "yellow")
         self.assertEqual(meter_color(metric(30), behind), "red")
 
-    def test_zero_spare_projects_behind_not_near(self):
-        # The popover paints red once the projected cushion is gone
-        # (model.js meterColor: onTrack with sparePercent < 1 is red).
-        pace = metric_pace(metric(20), NOW, "en_US")
-        self.assertEqual(pace, ("behind", "~0% spare"))
-        self.assertEqual(meter_color(metric(20), pace), "red")
+    def test_a_hair_over_the_line_is_calm_not_a_run_out(self):
+        # A hair over the line is inside the tolerance: no flame, blue.
+        pace = metric_pace(metric(21), NOW, "en_US")
+        self.assertEqual(pace, ("near", "~0% spare"))
+        self.assertEqual(meter_color(metric(21), pace), "blue")
+
+    def test_early_in_a_week_the_gap_keeps_rounding_calm(self):
+        week, eight_hours = 604_800, 28_800
+        # 7% used 8h into a week projects ~147% but sits ~2 points past the tick.
+        calm = metric_pace(metric(7, week, eight_hours), NOW, "en_US")
+        self.assertEqual(calm[0], "near")
+        self.assertEqual(meter_color(metric(7, week, eight_hours), calm), "blue")
+        self.assertEqual(metric_pace(metric(9, week, eight_hours), NOW)[0], "over")
+        self.assertEqual(metric_pace(metric(10, week, eight_hours), NOW)[0], "behind")
 
     def test_weekly_warmup_is_capped_at_one_hour(self):
         self.assertIsNone(metric_pace(metric(1, 604_800, 3_599), NOW))
         self.assertIsNotNone(metric_pace(metric(1, 604_800, 3_600), NOW))
 
-    def test_missing_or_expired_reset_uses_severity_fallback(self):
+    def test_without_pace_meter_color_reads_what_is_left(self):
+        for used, color in ((0, "blue"), (2, "blue"), (50, "blue"), (51, "yellow"),
+                            (59, "yellow"), (80, "yellow"), (81, "red"), (100, "red")):
+            self.assertEqual(meter_color({"percent": used}), color, used)
+        self.assertEqual(meter_color({}), "blue")
+        self.assertEqual(meter_color({"percent": "n/a"}), "blue")
+
+    def test_missing_or_expired_reset_has_no_pace(self):
         row = metric(40)
         row["reset_at"] = "not a date"
-        row["severity"] = "high"
         self.assertIsNone(metric_pace(row, NOW))
-        self.assertEqual(meter_color(row, None), "yellow")
         row["reset_at"] = (NOW - timedelta(seconds=1)).isoformat()
         self.assertIsNone(metric_pace(row, NOW))
-        self.assertEqual(meter_color({"percent": 100}, None), "red")
 
     def test_headline_and_disconnected_error_contract(self):
         self.assertEqual(metric_display({"headline": "value", "value": "12 credits", "percent": 40}), "12 credits")

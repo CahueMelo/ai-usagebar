@@ -9,6 +9,22 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Changed
+
+- **The meter colour and the flame follow the pace line, with a tolerance.**
+  Any row the least bit over the pace tick was red with a "Limit in …" flame,
+  so a weekly Claude row at 4% used seven hours into its week warned of a
+  run-out 7 hours before the reset, and a row at 98% left read like one that
+  needed attention. The verdict now allows for noise: up to 110% of the pace
+  line is blue with no flame ("~N% spare" or "~N% left at reset"); 110–130%
+  is yellow with "~N% over pace" and still no flame; over 130%, or over the
+  line with under 10% left, is red with the flame and "Limit in …". Each band
+  also needs the bar to sit past the tick by 3 points (yellow) or 5 points
+  (red), because early in a long window one whole percent of use swings the
+  projection by twenty points or more. Before a window has a projection the
+  colour reads what is left (blue, yellow under 50%, red under 20%). The same
+  in Left and Used mode, in the tray popover and in the Linux Mint tray.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed
