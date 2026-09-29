@@ -479,7 +479,8 @@ jobs:
               gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
                 --detach-sign --armor --output "$1.sig" "$1" <<<"$GPG_PASSPHRASE"
             else
-              gpg --batch --yes --detach-sign --armor --output "$1.sig" "$1"
+              gpg --batch --yes --pinentry-mode loopback \
+                --detach-sign --armor --output "$1.sig" "$1"
             fi
           }
           shopt -s nullglob
