@@ -150,6 +150,12 @@ pub enum Command {
         action: AccountAction,
     },
 
+    /// Configure the official Antigravity CLI status line for live sessions.
+    Antigravity {
+        #[command(subcommand)]
+        action: AntigravityAction,
+    },
+
     /// Quota and time-to-reset for every configured vendor and account.
     ///
     /// Exits 0 after printing a complete document, even when every entry
@@ -194,6 +200,16 @@ pub enum Command {
         #[command(subcommand)]
         provider: AuthProvider,
     },
+}
+
+#[derive(clap::Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AntigravityAction {
+    /// Install the AI UsageBar status line command.
+    SetupStatusline,
+    /// Remove the AI UsageBar status line command if still owned by it.
+    RemoveStatusline,
+    /// Receive and persist one status line payload from stdin.
+    IngestStatusline,
 }
 
 #[derive(clap::Subcommand, Debug, Clone)]
@@ -574,6 +590,25 @@ mod tests {
         ));
         assert!(Cli::try_parse_from(["ai-usagebar", "settings", "enable", "unknown"]).is_err());
         assert!(Cli::try_parse_from(["ai-usagebar", "settings", "enable"]).is_err());
+    }
+
+    #[test]
+    fn antigravity_statusline_actions_parse_and_require_an_action() {
+        for (arguments, expected) in [
+            (&["antigravity", "setup-statusline"][..], "setup"),
+            (&["antigravity", "remove-statusline"][..], "remove"),
+            (&["antigravity", "ingest-statusline"][..], "ingest"),
+        ] {
+            let cli = Cli::try_parse_from(
+                std::iter::once("ai-usagebar").chain(arguments.iter().copied()),
+            )
+            .unwrap();
+            assert!(
+                matches!(cli.command, Some(Command::Antigravity { .. })),
+                "{expected}"
+            );
+        }
+        assert!(Cli::try_parse_from(["ai-usagebar", "antigravity"]).is_err());
     }
 
     #[test]

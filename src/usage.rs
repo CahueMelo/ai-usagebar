@@ -471,6 +471,8 @@ pub enum AntigravitySource {
     #[default]
     Local,
     Remote,
+    /// The running `agy` CLI's official status-line payload.
+    Statusline,
 }
 
 impl AntigravitySource {
@@ -478,6 +480,7 @@ impl AntigravitySource {
         match self {
             AntigravitySource::Local => "local",
             AntigravitySource::Remote => "remote",
+            AntigravitySource::Statusline => "statusline",
         }
     }
 
@@ -487,6 +490,7 @@ impl AntigravitySource {
         match s {
             "local" => Some(AntigravitySource::Local),
             "remote" => Some(AntigravitySource::Remote),
+            "statusline" => Some(AntigravitySource::Statusline),
             _ => None,
         }
     }

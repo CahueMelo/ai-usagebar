@@ -9,6 +9,16 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **Multiple Antigravity CLI accounts on macOS.** The optional `agy` status-line
+  integration adds one live usage entry per distinct active Google account,
+  deduplicates repeated sessions, and displays only a masked email with an
+  opaque stable account ID. Active sessions are marked stale after 15 minutes
+  without a new status-line payload. It does not read or store OAuth tokens and
+  falls back to the existing Antigravity collector when no valid status-line
+  session is active.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed
