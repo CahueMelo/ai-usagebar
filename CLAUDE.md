@@ -54,7 +54,7 @@ When cutting a new version (patch, minor, or major):
      merge is not evidence here; the comparison is, and now the guard is too.
 3. **Bump `packaging/aur/PKGBUILD`** — `pkgver=X.Y.Z`, `pkgrel=1`, reset `sha256sums` to `'SKIP'`.
 4. **Bump `packaging/aur/PKGBUILD-bin`** — same `pkgver`, `pkgrel=1`, reset both
-   `sha256sums_x86_64` and `sha256sums_aarch64` to `'SKIP'`.
+   `sha256sums_x86_64` and `sha256sums_aarch64` to `('SKIP' 'SKIP')`.
 5. **Regenerate both `.SRCINFO`s NOW, before tagging** — the release
    workflow's `verify-version` job rejects the tag if `packaging/aur/.SRCINFO`
    or `.SRCINFO-bin` still carry the old `pkgver` (learned at v0.17.0, which

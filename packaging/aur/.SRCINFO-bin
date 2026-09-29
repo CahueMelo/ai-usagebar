@@ -14,9 +14,14 @@ pkgbase = ai-usagebar-bin
 	conflicts = ai-usagebar-debug
 	options = !strip
 	options = !debug
+	validpgpkeys = AE42EF5D73DD92E248815C95B65CCCAF64A99438
 	source_x86_64 = ai-usagebar-1.28.0-x86_64.tar.gz::https://github.com/akitaonrails/ai-usagebar/releases/download/v1.28.0/ai-usagebar-linux-x86_64.tar.gz
+	source_x86_64 = ai-usagebar-1.28.0-x86_64.tar.gz.sig::https://github.com/akitaonrails/ai-usagebar/releases/download/v1.28.0/ai-usagebar-linux-x86_64.tar.gz.sig
+	sha256sums_x86_64 = SKIP
 	sha256sums_x86_64 = SKIP
 	source_aarch64 = ai-usagebar-1.28.0-aarch64.tar.gz::https://github.com/akitaonrails/ai-usagebar/releases/download/v1.28.0/ai-usagebar-linux-aarch64.tar.gz
+	source_aarch64 = ai-usagebar-1.28.0-aarch64.tar.gz.sig::https://github.com/akitaonrails/ai-usagebar/releases/download/v1.28.0/ai-usagebar-linux-aarch64.tar.gz.sig
+	sha256sums_aarch64 = SKIP
 	sha256sums_aarch64 = SKIP
 
 pkgname = ai-usagebar-bin
