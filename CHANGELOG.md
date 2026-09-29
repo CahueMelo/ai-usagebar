@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Cursor on-demand in `usage --json` is numeric.** The On-Demand text row
+  carries `used_cents`, `limit_cents`, and `percent` (USD cents and the
+  consumed percent) when Cursor reports a prepaid cap. The Omarchy chip and
+  panel meter read those fields. The formatted `$spent / $cap` value is
+  unchanged for every other surface. A report from an older binary, which has
+  only that formatted value, still works.
+
 ## [1.27.0] — 2026-09-28
 
 ### Added
