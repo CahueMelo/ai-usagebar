@@ -1726,13 +1726,19 @@ fn deepinfra_sections(
     match snapshot.monthly_limit {
         Some(limit) if limit > 0.0 => {
             let percent = snapshot.monthly_consumed_pct().unwrap_or_default();
-            sections.push(Section::Metric {
-                label: "Monthly usage".into(),
-                pct: percent.clamp(0, 100) as u16,
-                severity: severity_for(percent),
-                value_label: format!("{} / {}", usd(snapshot.monthly_spend), usd(limit)),
-                footnote: format!("{percent}% used in {}", snapshot.period),
-            });
+            // A vendor-defined billing period with no reset instant — exactly
+            // the case push_metric exists for (a bare push would trip the
+            // reset-metadata assert the moment a limit is set).
+            sections.push_metric(
+                Section::Metric {
+                    label: "Monthly usage".into(),
+                    pct: percent.clamp(0, 100) as u16,
+                    severity: severity_for(percent),
+                    value_label: format!("{} / {}", usd(snapshot.monthly_spend), usd(limit)),
+                    footnote: format!("{percent}% used in {}", snapshot.period),
+                },
+                None,
+            );
         }
         Some(limit) => sections.push(Section::Text {
             label: "Monthly usage".into(),
@@ -2236,6 +2242,29 @@ mod tests {
         assert!(
             pools.iter().all(|p| p.reset_at.is_some()),
             "the reset time still travels with the row"
+        );
+    }
+
+    #[test]
+    fn deepinfra_monthly_usage_carries_no_reset_when_a_limit_is_set() {
+        // A vendor-defined billing period has no reset instant; the row must
+        // still travel through push_metric (reset_at None) — a bare push
+        // trips the reset-metadata assert the moment a limit is set.
+        let snapshot = VendorSnapshot::Deepinfra(crate::usage::DeepInfraSnapshot {
+            balance: 12.5,
+            monthly_spend: 10.0,
+            monthly_limit: Some(50.0),
+            period: "2026.09".into(),
+        });
+        let rows = sections_with_metadata_for(&ready(snapshot), now(), 5);
+        let metrics: Vec<_> = rows
+            .iter()
+            .filter(|p| matches!(p.section, Section::Metric { .. }))
+            .collect();
+        assert_eq!(metrics.len(), 1);
+        assert!(
+            metrics[0].reset_at.is_none(),
+            "a vendor billing period has no reset instant"
         );
     }
 
