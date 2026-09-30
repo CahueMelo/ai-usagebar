@@ -249,7 +249,10 @@ threshold in Preferences. Windows delivery is planned for a later release.
 
 One crossing is one notification. A key re-arms only when usage drops 7
 percentage points below the threshold (97 → below 90) or when the window's
-reset moves to a later instant, and the dedupe state lives in
+reset moves to a later instant by more than an hour and a half — a smaller move
+is the same window reported again, since vendors report the instant with
+sub-second drift between fetches and a rolling window slides it forward with
+the refresh interval — and the dedupe state lives in
 `~/.cache/ai-usagebar/notifications.json` behind the same file locking as the
 vendor caches. Banked reset credits (Codex, SuperGrok) also notify once, 48
 hours before each credit expires. Bodies carry only vendor-reported absolute

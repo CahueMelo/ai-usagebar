@@ -95,6 +95,16 @@ Each release is also published at
   still explains itself there.
 - **The Omarchy palette is read from where Omarchy applies it.** `omarchy-theme-set` writes the active theme to `~/.local/state/omarchy/current/theme`, while the TUI and the widget looked in `~/.config/omarchy/current/theme`, a layout Omarchy no longer populates. The lookup came up empty, the One Dark fallback was silent, and every themed surface stayed One Dark — the older path is now the fallback rather than the only candidate. Theme files that name their colors (`red`, `green`, `yellow`) are also read: only the pre-Omarchy-4 `color1`-`color3` aliases were parsed, so a current theme file would have overridden the foreground and background but left every severity color at One Dark.
 
+- **A quota notification no longer repeats while nothing changes.** The dedupe
+  recorded each window's reset instant and re-armed the key whenever a later
+  fetch reported a later one. Vendors report that instant with sub-second
+  precision that drifts between fetches — Anthropic's five-hour window came back
+  0.70s apart on two fetches four minutes apart — so a window sitting above the
+  threshold re-notified on a good share of refreshes. A move now has to clear an
+  hour and a half: longer than any refresh interval this ships with, and far
+  shorter than the shortest window, so a window that really rolled over still
+  notifies.
+
 ## [1.28.0] — 2026-09-29
 
 ### Changed
