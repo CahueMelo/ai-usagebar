@@ -151,6 +151,7 @@
   "pace_shows_after_first": "The pace shows after the first {duration} of each window.",
   "percent_left": "{percent}% left",
   "percent_left_at_reset": "~{percent}% left at reset",
+  "percent_over_pace": "~{percent}% over pace",
   "percent_spare": "~{percent}% spare",
   "percent_used": "{percent}% used",
   "popover_style": "Popover Style",

@@ -21,7 +21,7 @@ ai-usagebar-tui --config ./config.test.toml
 # is selected when the TUI opens. Defaults to anthropic when not set.
 # Only a vendor that is enabled can be primary.
 # primary = "anthropic"   # anthropic | anthropic_api | openai | copilot | ollama
-#                         # | zai | openrouter | deepseek | kimi | kilo | novita
+#                         # | zai | openrouter | deepseek | deepinfra | kimi | kilo | novita
 #                         # | moonshot | grok | supergrok | grokbot | antigravity | cursor
 #                         # | minimax | kiro | nous | opencode-go | commandcode
 #                         # | orcarouter | modelstudio
@@ -90,6 +90,13 @@ enabled = true             # disabled by default; enable once you add an API key
 api_key_env = "DEEPSEEK_API_KEY"
 # api_key = "sk-..."       # used if DEEPSEEK_API_KEY is unset; chmod 600 the file!
 # display_limit = 200      # tank size in USD; see "Balance tanks" below
+# headline = "amount"      # "amount" | "percent"
+
+[deepinfra]
+enabled = true             # disabled by default; enable once you add an API key
+api_key_env = "DEEPINFRA_API_KEY"
+# api_key = "..."          # used if DEEPINFRA_API_KEY is unset; chmod 600 the file!
+# display_limit = 50       # optional prepaid tank size in USD
 # headline = "amount"      # "amount" | "percent"
 
 [kimi]
@@ -226,7 +233,7 @@ enabled = false            # disabled by default; enable after `bl auth login --
 For more than one OpenRouter key, see the
 [OpenRouter account guide](openrouter-accounts.md). The existing singular
 `[openrouter]` key remains the default account and needs no migration. Z.AI,
-DeepSeek, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the same
+DeepSeek, DeepInfra, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the same
 `[[<vendor>.accounts]]` array and `show_default_account` switch — see the
 [API-key account guide](api-key-accounts.md).
 
@@ -255,7 +262,7 @@ overlay (`s`).
 
 ### Balance tanks
 
-DeepSeek, Kilo, Novita, Moonshot and prepaid Grok report how much money is
+DeepSeek, DeepInfra, Kilo, Novita, Moonshot and prepaid Grok report how much money is
 **left** and nothing else. There is no denominator in those responses, so
 there is nothing to draw a meter against and the row is a plain balance.
 
@@ -270,6 +277,10 @@ display_limit = 200        # you topped up $200 and want to watch it burn down
 It must be finite and greater than zero; anything else fails at load with the
 offending section named. There is no default and no built-in figure: leave it
 out and nothing changes.
+
+DeepInfra also shows the current calendar-month spend and the account's monthly
+spending limit when the API supplies one. Its `display_limit` affects only the
+prepaid-balance tank; it never replaces the provider's monthly limit.
 
 It is a fallback, never an override: a vendor that states a limit of its own
 keeps it. That is why **`[openrouter]` has no `display_limit` at all**. It

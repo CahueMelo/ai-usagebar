@@ -727,6 +727,19 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
                     .await?;
             Ok(outcome.into())
         }
+        VendorId::Deepinfra => {
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
+            let endpoints = crate::deepinfra::fetch::Endpoints::default();
+            let outcome = crate::deepinfra::fetch::fetch_snapshot(
+                client,
+                &api_key,
+                &cache,
+                &endpoints,
+                DEFAULT_TTL,
+            )
+            .await?;
+            Ok(outcome.into())
+        }
         VendorId::Kimi => {
             let (auth, endpoints) = crate::kimi::resolve_auth(&config.kimi)?;
             let cache = crate::cache::Cache::for_vendor("kimi")?;

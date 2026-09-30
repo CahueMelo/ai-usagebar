@@ -151,6 +151,7 @@
   "pace_shows_after_first": "O ritmo aparece após {duration} de cada período.",
   "percent_left": "{percent}% restantes",
   "percent_left_at_reset": "~{percent}% restantes na redefinição",
+  "percent_over_pace": "~{percent}% acima do ritmo",
   "percent_spare": "~{percent}% de folga",
   "percent_used": "{percent}% usados",
   "popover_style": "Estilo do popover",

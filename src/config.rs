@@ -8,6 +8,7 @@
 //! [zai]        enabled = true
 //! [openrouter] enabled = true
 //! [deepseek]   enabled = false
+//! [deepinfra]  enabled = false
 //! [kimi]       enabled = false
 //! [grokbot]    enabled = false  # Grok Bot desktop app's own session
 //! [modelstudio] enabled = false # `bl` CLI's own console login (Token Plan)
@@ -51,6 +52,7 @@ pub struct Config {
     pub zai: ZaiConfig,
     pub openrouter: OpenRouterConfig,
     pub deepseek: DeepseekConfig,
+    pub deepinfra: DeepInfraConfig,
     pub kimi: KimiConfig,
     pub kilo: KiloConfig,
     pub novita: NovitaConfig,
@@ -1249,6 +1251,33 @@ impl Default for DeepseekConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
+pub struct DeepInfraConfig {
+    pub enabled: bool,
+    pub accounts: Vec<ApiKeyAccount>,
+    pub show_default_account: bool,
+    pub api_key_env: String,
+    pub api_key: Option<String>,
+    /// Optional prepaid tank size in USD for rendering the balance as a meter.
+    pub display_limit: Option<f64>,
+    pub headline: Headline,
+}
+
+impl Default for DeepInfraConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            accounts: Vec::new(),
+            show_default_account: true,
+            api_key_env: "DEEPINFRA_API_KEY".to_string(),
+            api_key: None,
+            display_limit: None,
+            headline: Headline::Amount,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
 pub struct KimiConfig {
     pub enabled: bool,
     pub api_key_env: String,
@@ -2068,6 +2097,7 @@ impl Config {
             self.zai.api_key.as_deref(),
             self.openrouter.api_key.as_deref(),
             self.deepseek.api_key.as_deref(),
+            self.deepinfra.api_key.as_deref(),
             self.kimi.api_key.as_deref(),
             self.kilo.api_key.as_deref(),
             self.novita.api_key.as_deref(),
@@ -2140,6 +2170,7 @@ impl Config {
             VendorId::Zai => self.zai.enabled,
             VendorId::Openrouter => self.openrouter.enabled,
             VendorId::Deepseek => self.deepseek.enabled,
+            VendorId::Deepinfra => self.deepinfra.enabled,
             VendorId::Kimi => self.kimi.enabled,
             VendorId::Kilo => self.kilo.enabled,
             VendorId::Novita => self.novita.enabled,
@@ -2172,6 +2203,7 @@ impl Config {
             VendorId::Zai => &self.zai.api_key_env,
             VendorId::Openrouter => &self.openrouter.api_key_env,
             VendorId::Deepseek => &self.deepseek.api_key_env,
+            VendorId::Deepinfra => &self.deepinfra.api_key_env,
             VendorId::Kimi => &self.kimi.api_key_env,
             VendorId::Kilo => &self.kilo.api_key_env,
             VendorId::Novita => &self.novita.api_key_env,
@@ -2206,6 +2238,7 @@ impl Config {
             VendorId::Zai => self.zai.api_key.as_deref(),
             VendorId::Openrouter => self.openrouter.api_key.as_deref(),
             VendorId::Deepseek => self.deepseek.api_key.as_deref(),
+            VendorId::Deepinfra => self.deepinfra.api_key.as_deref(),
             VendorId::Kimi => self.kimi.api_key.as_deref(),
             VendorId::Kilo => self.kilo.api_key.as_deref(),
             VendorId::Novita => self.novita.api_key.as_deref(),
@@ -2233,10 +2266,11 @@ impl Config {
     /// The API-key vendors that take a `[[<vendor>.accounts]]` array —
     /// OpenRouter's (#221), generalized. Kimi is left out on purpose: its
     /// fallback is the Kimi Code CLI's single OAuth login, not a key.
-    pub const API_KEY_ACCOUNT_VENDORS: [VendorId; 9] = [
+    pub const API_KEY_ACCOUNT_VENDORS: [VendorId; 10] = [
         VendorId::Zai,
         VendorId::Openrouter,
         VendorId::Deepseek,
+        VendorId::Deepinfra,
         VendorId::Kilo,
         VendorId::Novita,
         VendorId::Moonshot,
@@ -2252,6 +2286,7 @@ impl Config {
             VendorId::Zai => Some(&self.zai.accounts),
             VendorId::Openrouter => Some(&self.openrouter.accounts),
             VendorId::Deepseek => Some(&self.deepseek.accounts),
+            VendorId::Deepinfra => Some(&self.deepinfra.accounts),
             VendorId::Kilo => Some(&self.kilo.accounts),
             VendorId::Novita => Some(&self.novita.accounts),
             VendorId::Moonshot => Some(&self.moonshot.accounts),
@@ -2269,6 +2304,7 @@ impl Config {
             VendorId::Zai => self.zai.show_default_account,
             VendorId::Openrouter => self.openrouter.show_default_account,
             VendorId::Deepseek => self.deepseek.show_default_account,
+            VendorId::Deepinfra => self.deepinfra.show_default_account,
             VendorId::Kilo => self.kilo.show_default_account,
             VendorId::Novita => self.novita.show_default_account,
             VendorId::Moonshot => self.moonshot.show_default_account,
@@ -2313,6 +2349,9 @@ impl Config {
         match vendor {
             VendorId::Deepseek => {
                 DisplayPrefs::balance(self.deepseek.display_limit, self.deepseek.headline)
+            }
+            VendorId::Deepinfra => {
+                DisplayPrefs::balance(self.deepinfra.display_limit, self.deepinfra.headline)
             }
             VendorId::Kilo => DisplayPrefs::balance(self.kilo.display_limit, self.kilo.headline),
             VendorId::Novita => {
@@ -2385,6 +2424,7 @@ impl Config {
         // asked for — or none, with no diagnostic either way.
         for (section, limit) in [
             ("deepseek", self.deepseek.display_limit),
+            ("deepinfra", self.deepinfra.display_limit),
             ("kilo", self.kilo.display_limit),
             ("novita", self.novita.display_limit),
             ("moonshot", self.moonshot.display_limit),

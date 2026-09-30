@@ -9,8 +9,88 @@ Each release is also published at
 
 ## [Unreleased]
 
-### Fixed
+### Added
+- **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
+  Following upstream release signing introduced in v1.28.0 (#257), `packaging/aur/PKGBUILD-bin`
+  and `.SRCINFO-bin` now declare maintainer key `AE42EF5D73DD92E248815C95B65CCAAF64A99438`
+  in `validpgpkeys` and fetch detached `.sig` signatures alongside each architecture's
+  binary archive (`source_x86_64` and `source_aarch64`), allowing `makepkg` to automatically
+  verify release integrity and authenticity (#282).
+- **Native DeepInfra billing support.** The widget, TUI, aggregate report, and
+  named API-key accounts now read `DEEPINFRA_API_KEY`, combine the documented
+  billing checklist and current-month usage endpoints, convert usage cents to
+  dollars, and show prepaid balance, monthly spend, optional limit, and period.
 
+### Changed
+- **The meter colour and the flame follow the pace line, with a tolerance.**
+  Any row the least bit over the pace tick was red with a "Limit in …" flame,
+  so a weekly Claude row at 4% used seven hours into its week warned of a
+  run-out 7 hours before the reset, and a row at 98% left read like one that
+  needed attention. The verdict now allows for noise: up to 110% of the pace
+  line is blue with no flame ("~N% spare" or "~N% left at reset"); 110–130%
+  is yellow with "~N% over pace" and still no flame; over 130%, or over the
+  line with under 10% left, is red with the flame and "Limit in …". Each band
+  also needs the bar to sit past the tick by 3 points (yellow) or 5 points
+  (red), because early in a long window one whole percent of use swings the
+  projection by twenty points or more. Before a window has a projection the
+  colour reads what is left (blue, yellow under 50%, red under 20%). The same
+  in Left and Used mode, in the tray popover and in the Linux Mint tray.
+
+### Fixed
+- **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
+  Terminal output from `account add`, `account switch`, and `account merge-history`
+  previously interpolated raw `.display()` paths and unsanitized labels directly
+  into `println!` and `eprintln!`, violating the project invariant that untrusted
+  text is sanitized at the sink and risking ANSI escape sequence injection into
+  the terminal. Paths now route through `sanitize_untrusted_path`; errors,
+  capture notes and config parse messages through one `printable` helper. A
+  guard test fails on any `account` print that interpolates `.display()`,
+  `{error}` or `{note}` bare.
+- **`account merge-history` synchronizes under `account_switch_lock`.**
+  Running history merges now acquires the profile switch lock before staging
+  and merging, preventing race conditions and potential profile corruption
+  when concurrent switches or refreshes target the same profile.
+- **Antigravity keeps reporting with only the `agy` CLI installed.** The saved
+  Google session lasts about an hour and only a running Antigravity renews it;
+  with the desktop app closed nothing did, so the widget fell to "session
+  expired and ai-usagebar has no OAuth client" until the user ran `agy`
+  themselves. When the session is expired and no OAuth client is configured,
+  the fetch now runs `agy models` (no TTY, no prompt, read-only; it rewrites
+  the saved credential as a side effect) and reads the credential again. `agy`
+  is found on `PATH`, then in `~/.local/bin`. The run is bounded to 25 seconds
+  and attempted at most once every ten minutes, failures included, so a dead
+  refresh token never turns into a spawn per poll, and the spawn never
+  inherits this process's provider key env vars. `agy`'s own background
+  updater is switched off for that run (`AGY_CLI_DISABLE_AUTO_UPDATE=true`):
+  on Windows it opens a console window of its own that no flag on our spawn
+  can hide. Configuring
+  `oauth_client_id` and `oauth_client_secret` still refreshes directly and
+  never spawns anything.
+- **Cursor is detected from `cursor-agent` alone on macOS.** The CLI keeps its
+  login in the login Keychain (`cursor-access-token`, account `cursor-user`)
+  rather than in an `auth.json`, so a Mac with the CLI and no desktop IDE had
+  neither credential source and Cursor read as signed out. The Keychain is now
+  the third source, after the IDE's `state.vscdb` and the agent's `auth.json`,
+  and is only read when the IDE database does not exist and the agent path is
+  the default one.
+  The agent file's default location on macOS was also wrong: `cursor-agent`
+  writes `~/.cursor/auth.json`, not `~/Library/Application Support/cursor/`, so
+  the file fallback could never be found there. The default now follows the
+  CLI's own per-OS path (Linux and Windows are unchanged).
+- **Popover error messages keep their path.** The card removed absolute paths
+  from a diagnostic, but only up to the next space, so on macOS "Cursor
+  database not found at ~/Library/Application Support/…" became "not found at
+  Support/Cursor/…", and on Windows the path vanished and the sentence read
+  "not found at Open the Cursor IDE". The path now stays whole, with only the
+  home prefix (`/Users/<name>`, `/home/<name>`, `/root`, `C:\Users\<name>`)
+  folded to `~`, so the account name still stays off the card. A diagnosis that
+  is nothing but a path still falls back to "Open TUI for details".
+- **The update banner says "Updating…" once.** Clicking Install put the same
+  "Updating…" on the button and in the sentence above it, and the download
+  and install that followed repeated each step in both places too. Progress
+  now shows on the button only; the sentence keeps naming the release
+  ("AI Usage vX.Y.Z is ready to install.") until it is done, and a failure
+  still explains itself there.
 - **The Omarchy palette is read from where Omarchy applies it.** `omarchy-theme-set` writes the active theme to `~/.local/state/omarchy/current/theme`, while the TUI and the widget looked in `~/.config/omarchy/current/theme`, a layout Omarchy no longer populates. The lookup came up empty, the One Dark fallback was silent, and every themed surface stayed One Dark — the older path is now the fallback rather than the only candidate. Theme files that name their colors (`red`, `green`, `yellow`) are also read: only the pre-Omarchy-4 `color1`-`color3` aliases were parsed, so a current theme file would have overridden the foreground and background but left every severity color at One Dark.
 
 ## [1.28.0] — 2026-09-29

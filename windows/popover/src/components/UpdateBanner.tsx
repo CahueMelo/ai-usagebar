@@ -4,7 +4,7 @@ import type { UpdateInfo } from "@/lib/types";
 import { m } from "@/paraglide/messages.js";
 import { useI18n } from "@/lib/i18n";
 import { useBusyLabel } from "@/lib/useBusyLabel";
-import { sendCommand, updateAction, updateMessage } from "../model.js";
+import { bannerMessage, sendCommand, updateAction } from "../model.js";
 
 interface UpdateBannerProps {
   repository: string;
@@ -14,7 +14,8 @@ interface UpdateBannerProps {
 /**
  * A HintCard for a waiting release, with the same action the update dialog offers: Install when
  * the host can install it here, the release page when it cannot. The ✕ snoozes this version; it
- * is hidden while a download or install is under way.
+ * is hidden while a download or install is under way. Progress shows on the button only; the
+ * sentence keeps naming the release.
  */
 export function UpdateBanner({ repository, update }: UpdateBannerProps) {
   const { language } = useI18n();
@@ -36,7 +37,7 @@ export function UpdateBanner({ repository, update }: UpdateBannerProps) {
       buttonTitle={clicked ?? action.label}
       dismissTitle={m.remind_me_later()}
       icon={<MdiArrowDownCircle />}
-      message={clicked ?? updateMessage(update, language)}
+      message={bannerMessage(update, language)}
       title={m.update_available()}
       onAction={onAction}
       onDismiss={busy ? undefined : () => sendCommand("snooze-update")}
