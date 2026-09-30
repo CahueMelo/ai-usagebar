@@ -766,7 +766,11 @@ Panel {
               BrandMark {
                 brand: root.settingsOpen ? "" : Model.brandIconFile(root.entry)
                 fallback: root.settingsOpen ? "󰒓" : Model.providerIcon(root.entry)
-                foreground: root.foreground
+                // Colour-coding paints the meters; classic mode keeps the
+                // alarming brand tint when a critical quota alerts (#278).
+                foreground: root.colorCodeUsage
+                  ? root.foreground
+                  : (root.entryAlarming ? root.urgent : root.foreground)
                 fontFamily: root.fontFamily
                 fontSize: Style.font.display
               }

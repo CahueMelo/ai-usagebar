@@ -9,6 +9,8 @@ Each release is also published at
 
 ## [Unreleased]
 
+## [1.29.0] — 2026-09-30
+
 ### Added
 
 - **Omarchy can color-code usage by level.** The Quattro bar chips, panel meters,
@@ -17,7 +19,9 @@ Each release is also published at
   Quattro's urgent colour for the critical rung. A new **Color-code usage by
   level** display toggle (`colorCodeUsage`, off by default) turns the palette
   on or off immediately; when it is off, everything stays on the normal
-  foreground colour.
+  foreground colour and the classic alarm chrome (#278) still fires for a
+  critical quota. Theme key precedence matches Waybar/`theme.rs` after #289
+  (named `red`/`green`/`yellow` win over `color1`–`color3`).
 - **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
   Following upstream release signing introduced in v1.28.0 (#257), `packaging/aur/PKGBUILD-bin`
   and `.SRCINFO-bin` now declare maintainer key `AE42EF5D73DD92E248815C95B65CCAAF64A99438`
@@ -29,6 +33,13 @@ Each release is also published at
   billing checklist and current-month usage endpoints, convert usage cents to
   dollars, and show prepaid balance, monthly spend, optional limit, and period.
 - **The Omarchy bar's per-provider chips open that provider.** With **Show all providers** on, a left-click on a chip selects the entry that chip stands for and opens the panel there, the way the panel's own provider buttons do, instead of toggling the panel on whatever was selected last. Clicking the chip the panel already shows closes it; right-click and middle-click keep their panel-wide meaning, and hovering a chip still shows the button tooltip.
+- **Multiple Antigravity CLI accounts on macOS.** The optional `agy` status-line
+  integration adds one live usage entry per distinct active Google account,
+  deduplicates repeated sessions, and displays only a masked email with an
+  opaque stable account ID. Active sessions are marked stale after 15 minutes
+  without a new status-line payload. It does not read or store OAuth tokens and
+  falls back to the existing Antigravity collector when no valid status-line
+  session is active.
 
 ### Changed
 - **The meter colour and the flame follow the pace line, with a tolerance.**
@@ -50,6 +61,9 @@ Each release is also published at
   paints the active-plugin mark at ~55% of the slot unless the widget hints
   otherwise; the AI Usage chip now reports its full width so the underline
   tracks Cursor's multi-percentage label as indicators come and go.
+- **The macOS Z.AI row says “MCP tools” without the monthly suffix.**
+  The suffix made the row wider than the other usage rows, while the reset
+  countdown already shows the length of the quota window.
 - **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
   Terminal output from `account add`, `account switch`, and `account merge-history`
   previously interpolated raw `.display()` paths and unsanitized labels directly
@@ -105,6 +119,25 @@ Each release is also published at
   ("AI Usage vX.Y.Z is ready to install.") until it is done, and a failure
   still explains itself there.
 - **The Omarchy palette is read from where Omarchy applies it.** `omarchy-theme-set` writes the active theme to `~/.local/state/omarchy/current/theme`, while the TUI and the widget looked in `~/.config/omarchy/current/theme`, a layout Omarchy no longer populates. The lookup came up empty, the One Dark fallback was silent, and every themed surface stayed One Dark — the older path is now the fallback rather than the only candidate. Theme files that name their colors (`red`, `green`, `yellow`) are also read: only the pre-Omarchy-4 `color1`-`color3` aliases were parsed, so a current theme file would have overridden the foreground and background but left every severity color at One Dark.
+- **The Omarchy bar's chips answer a click anywhere in their column.** The bar
+  presses a slot's widget by geometry, so a chip only won a press inside its own
+  rect: the glyph sat 12 px tall in a 26 px slot, and a press on the padding
+  above or below it fell through to the button, which toggled whichever entry was
+  already selected instead. Each chip now registers its whole column of the slot
+  — the full height, half of every gap beside it, split at the midpoint with its
+  neighbour, and the button's padding at either end of the widget — so the row
+  is a partition of the slot rather than glyphs
+  floating in a button. The row's width and each chip's place in it are
+  unchanged.
+- **A quota notification no longer repeats while nothing changes.** The dedupe
+  recorded each window's reset instant and re-armed the key whenever a later
+  fetch reported a later one. Vendors report that instant with sub-second
+  precision that drifts between fetches — Anthropic's five-hour window came back
+  0.70s apart on two fetches four minutes apart — so a window sitting above the
+  threshold re-notified on a good share of refreshes. A move now has to clear an
+  hour and a half: longer than any refresh interval this ships with, and far
+  shorter than the shortest window, so a window that really rolled over still
+  notifies.
 
 ## [1.28.0] — 2026-09-29
 
@@ -3354,7 +3387,8 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.28.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.29.0...HEAD
+[1.29.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...v1.26.0

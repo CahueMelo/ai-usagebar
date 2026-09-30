@@ -64,8 +64,21 @@ assert.match(barWidgetSource, /function\s+chipItems\s*\(/);
 assert.match(barWidgetSource, /function\s+syncChipTargets\s*\(/);
 assert.match(barWidgetSource, /onModelChanged:\s*Qt\.callLater\(root\.syncChipTargets\)/);
 assert.match(barWidgetSource, /if\s*\(chips\.length\s*<=\s*1\)\s*return/);
+// The registered target is the chip's whole column of the slot: the bar
+// hit-tests it by rect, so the glyph-height delegate alone left the padding
+// above and below it to the button as well as the gaps beside it.
+assert.match(barWidgetSource, /Model\.chipHitGaps\(index,\s*chipRepeater\.count,\s*Style\.space\(10\),\s*Style\.spaceReal\(17\)\s*\/\s*2\)/);
+// The button's edge padding lives in the outer columns, so it must not be
+// added to the widget's width a second time.
+assert.match(barWidgetSource, /fixedWidth:\s*root\.bar\s*&&\s*root\.bar\.vertical\s*\?\s*-1\s*:\s*chipRow\.implicitWidth\n/);
+assert.match(barWidgetSource, /height:\s*button\.height/);
+assert.match(barWidgetSource, /width:\s*chipContent\.implicitWidth\s*\+\s*hitGaps\.left\s*\+\s*hitGaps\.right/);
+assert.match(barWidgetSource, /x:\s*chipHit\.hitGaps\.left/);
 assert.match(barWidgetSource, /function\s+triggerPress\s*\(buttonCode\)/);
-assert.match(barWidgetSource, /root\.panelItem\.openEntry\(chipDelegate\.chip\.id\s*\|\|\s*""\)/);
+assert.match(barWidgetSource, /root\.panelItem\.openEntry\(chipHit\.chip\.id\s*\|\|\s*""\)/);
+// Classic alarm chrome when colour-coding is off; RAG colours replace it when on.
+assert.match(barWidgetSource, /active:\s*!root\.colorCodeUsage\s*&&\s*root\.alarming/);
+assert.match(barWidgetSource, /text:\s*root\.alarming\s*\?\s*"󰅙"\s*:\s*"󰚩"/);
 assert.doesNotMatch(barWidgetSource, /\bIpcHandler\s*\{/);
 
 const panelSource = fs.readFileSync(new URL('./Panel.qml', import.meta.url), 'utf8');
@@ -138,9 +151,8 @@ assert.ok(
   syncSource.indexOf('for (var r = 0') < syncSource.indexOf('for (var i = 0'),
   'remembered-entry check precedes the current-selection early return'
 );
-assert.match(panelSource, /BrandMark\s*\{[\s\S]*?foreground:\s*root\.foreground/m);
+assert.match(panelSource, /root\.entryAlarming\s*\?\s*root\.urgent/);
 assert.doesNotMatch(panelSource, /BrandMark[\s\S]*foreground:\s*root\.alarming\s*\?/m);
-assert.doesNotMatch(panelSource, /BrandMark[\s\S]*foreground:\s*root\.entryAlarming\s*\?/m);
 const brandMarkSource = fs.readFileSync(new URL('./BrandMark.qml', import.meta.url), 'utf8');
 assert.match(brandMarkSource, /icons\/" \+ root\.brand/);
 assert.ok(fs.existsSync(new URL('./icons/claude.svg', import.meta.url)));
@@ -397,6 +409,33 @@ assert.equal(one[0].brand, 'openai.svg');
 // placeholders for a lone, vertical or empty bar have none to offer.
 assert.equal(strip.map(chip => chip.id).join(','), 'anthropic@work,openai');
 assert.equal(one[0].id, 'openai');
+// The bar resolves a slot press against each registered target's own rect, so a
+// chip's target is its whole column of the slot: the padding above and below
+// the glyph, and half of every gap beside it. Before this, a press on that
+// padding fell through to the button and toggled the entry already selected.
+// The pair is copied out of the vm realm, whose objects fail a strict compare.
+// The outer columns also own the button's edge padding: before, the first and
+// last chips stopped at their glyph and a press at either end of the widget
+// reached the button.
+const chipGaps = (index, count) => {
+  const value = model.chipHitGaps(index, count, 10, 8.5);
+  return {left: value.left, right: value.right};
+};
+assert.deepEqual(chipGaps(0, 3), {left: 8.5, right: 5});
+assert.deepEqual(chipGaps(1, 3), {left: 5, right: 5});
+assert.deepEqual(chipGaps(2, 3), {left: 5, right: 8.5});
+assert.deepEqual(chipGaps(0, 2), {left: 8.5, right: 5});
+assert.deepEqual(chipGaps(1, 2), {left: 5, right: 8.5});
+// A lone chip is not a target, but it still carries the edge padding the
+// button's width no longer adds.
+assert.deepEqual(chipGaps(0, 1), {left: 8.5, right: 8.5});
+// Two half-gaps replace each plain spacing and the edges move inside the outer
+// columns, so the columns add up to the widget's old padded width.
+assert.equal([0, 1, 2].map(index => {
+  const gaps = chipGaps(index, 3);
+  return 40 + gaps.left + gaps.right;
+}).reduce((sum, width) => sum + width, 0), 3 * 40 + 2 * 10 + 17);
+assert.equal(40 + chipGaps(0, 1).left + chipGaps(0, 1).right, 40 + 17);
 assert.equal(model.barChips([], null, false, true, false, false, true, false)[0].id, undefined);
 assert.equal(model.barChips([], null, false, true, false, false, true, true)[0].id, undefined);
 assert.equal(model.barStrip([claudeChip, openaiChip], false, false, true, false, false), '󰚩  29%  󱢆  95%');
@@ -447,6 +486,43 @@ assert.equal(model.formatReset(localReset(2026, 9, 5, 14, 0), at(2026, 8, 14, 12
 assert.equal(model.formatReset('2026-08-14T12:00:00Z', Date.parse('2026-08-14T12:00:00Z')), 'Reset due');
 assert.equal(model.formatReset('', Date.parse('2026-08-14T12:00:00Z')), '');
 assert.equal(model.formatReset('not-a-date', Date.parse('2026-08-14T12:00:00Z')), '');
+
+// Theme palette: named Omarchy keys win over color1–3 aliases (#289 / #292).
+const namedWins = model.parseThemePalette([
+  'color1 = "#111111"',
+  'red = "#f7768e"',
+  'color2 = "#222222"',
+  'green = "#9ece6a"',
+  'color3 = "#333333"',
+  'yellow = "#e0af68"',
+  'orange = "#eb927b"',
+].join('\n'));
+assert.equal(namedWins.red, '#f7768e');
+assert.equal(namedWins.green, '#9ece6a');
+assert.equal(namedWins.yellow, '#e0af68');
+assert.equal(namedWins.orange, '#eb927b');
+const aliasOnly = model.parseThemePalette([
+  'color1 = "#aa1111"',
+  'color2 = "#11aa11"',
+  'color3 = "#1111aa"',
+].join('\n'));
+assert.equal(aliasOnly.red, '#aa1111');
+assert.equal(aliasOnly.green, '#11aa11');
+assert.equal(aliasOnly.yellow, '#1111aa');
+assert.equal(aliasOnly.orange, '#aa1111'); // orange falls back to resolved red
+const reversedOrder = model.parseThemePalette([
+  'red = "#f7768e"',
+  'color1 = "#111111"',
+].join('\n'));
+assert.equal(reversedOrder.red, '#f7768e');
+
+// severityColor maps the report contract onto the theme palette.
+const palette = { green: '#g', yellow: '#y', orange: '#o', red: '#r' };
+assert.equal(model.severityColor('low', palette), '#g');
+assert.equal(model.severityColor('mid', palette), '#y');
+assert.equal(model.severityColor('high', palette), '#o');
+assert.equal(model.severityColor('critical', palette), '#r');
+assert.equal(model.severityColor('', palette), '#g');
 assert.equal(model.formatUpdated('2026-08-14T12:00:00Z', Date.parse('2026-08-14T12:03:00Z')), 'Updated 3m ago');
 assert.equal(model.metricDetail(parsed.entries[0].sections[1]), '60% elapsed · 31pts under');
 

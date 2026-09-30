@@ -375,6 +375,27 @@ function barChips(entries, selected, showAll, showValue, showProvider, loading, 
   return chips
 }
 
+// The bar presses a slot's widget by geometry: it maps the point into every
+// registered click target and takes the newest one whose rect contains it,
+// falling back to the slot's button. A chip that registered only its glyph left
+// the button to swallow the rest of the slot, so a press aimed at a chip above,
+// below or beside it toggled whichever entry was already selected. Each chip
+// therefore registers its whole column of the slot, and the gaps between chips
+// split at their midpoint: the first and last chips own half of the gap beside
+// them, a middle chip a whole one. The outer columns also own the button's
+// padding at either end (`edge`), so the columns tile the whole widget and its
+// width stays exactly what the plain spacing and padding produced.
+function chipHitGaps(index, count, gap, edge) {
+  var half = (Number(gap) || 0) / 2
+  var outer = Number(edge) || 0
+  var chips = Number(count) || 0
+  var position = Number(index) || 0
+  return {
+    left: position === 0 ? outer : half,
+    right: position >= chips - 1 ? outer : half
+  }
+}
+
 // Which usage window the top bar shows. "auto" keeps the historical
 // highest-percent metric; the rest pin one window class across vendors.
 // Unknown, empty, and legacy values fall back to "auto" so an existing
@@ -472,24 +493,35 @@ var ONE_DARK_PALETTE = {
 }
 
 // Parse Omarchy theme/colors.toml keys used for RAG (Waybar Theme's source).
-// orange falls back to red when absent, matching theme.rs merged_with_omarchy.
+// Named keys win over the older color1–3 aliases, matching theme.rs
+// merged_with_omarchy after #289 (red.or(color1), not last-occurrence-wins).
+// orange falls back to the resolved red when absent.
 function parseThemePalette(raw) {
-  var green = ""
-  var yellow = ""
-  var orange = ""
-  var red = ""
+  var greenNamed = ""
+  var greenAlias = ""
+  var yellowNamed = ""
+  var yellowAlias = ""
+  var orangeNamed = ""
+  var redNamed = ""
+  var redAlias = ""
   var lines = String(raw || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
     var match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})/)
     if (!match) continue
     var key = match[1]
     var hex = match[2]
-    if (key === "green" || key === "color2") green = hex
-    else if (key === "yellow" || key === "color3") yellow = hex
-    else if (key === "orange") orange = hex
-    else if (key === "red" || key === "color1") red = hex
+    if (key === "green") greenNamed = hex
+    else if (key === "color2") greenAlias = hex
+    else if (key === "yellow") yellowNamed = hex
+    else if (key === "color3") yellowAlias = hex
+    else if (key === "orange") orangeNamed = hex
+    else if (key === "red") redNamed = hex
+    else if (key === "color1") redAlias = hex
   }
-  if (!orange && red) orange = red
+  var red = redNamed || redAlias
+  var green = greenNamed || greenAlias
+  var yellow = yellowNamed || yellowAlias
+  var orange = orangeNamed || red
   return {
     green: green || ONE_DARK_PALETTE.green,
     yellow: yellow || ONE_DARK_PALETTE.yellow,

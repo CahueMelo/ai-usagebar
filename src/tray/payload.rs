@@ -346,6 +346,49 @@ mod tests {
         assert!(entries[3].get("sign_in").is_none(), "{:?}", entries[3]);
     }
 
+    #[test]
+    fn popover_keeps_all_distinct_antigravity_account_cards() {
+        let entries = (0..5)
+            .map(|index| {
+                json!({
+                    "id": format!("antigravity@{index:012x}"),
+                    "name": "antigravity · a***@example.com",
+                    "display_name": "Antigravity · a***@example.com",
+                    "status": "ready",
+                    "sections": [{
+                        "type": "metric",
+                        "label": format!("Weekly {index}"),
+                        "percent": index * 10,
+                        "value": format!("{}%", index * 10),
+                        "detail": format!("Resets in {index}d"),
+                        "severity": "low",
+                        "reset_at": null
+                    }]
+                })
+            })
+            .collect::<Vec<_>>();
+        let report = json!({ "primary": "antigravity", "entries": entries }).to_string();
+        let payload = wrap_report(&report, &facts("1.0.0", false), 0, None);
+        let cards = payload["entries"].as_array().unwrap();
+        let ids = cards
+            .iter()
+            .map(|card| card["id"].as_str().unwrap())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(cards.len(), 5);
+        assert_eq!(ids.len(), 5);
+        assert!(
+            cards
+                .iter()
+                .all(|card| card["display_name"] == "Antigravity · a***@example.com")
+        );
+        assert!(
+            cards
+                .iter()
+                .all(|card| card["sign_in"] == crate::vendor::VendorId::Antigravity.sign_in_hint())
+        );
+        assert_eq!(cards[4]["sections"][0]["detail"], "Resets in 4d");
+    }
+
     /// Every id `usage --json` can emit must resolve, or the popover shows a
     /// generic line for a provider we do know how to sign in.
     #[test]

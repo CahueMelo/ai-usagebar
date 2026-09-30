@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 // Quattro bar entry point. The popup is loaded separately so the object in
 // the bar slot owns shell routing while Panel.qml remains focused on report
@@ -15,10 +16,17 @@ BarWidget {
   readonly property bool popoutSwitchClosing: panelItem
     ? panelItem.popoutSwitchClosing === true
     : false
+  readonly property bool colorCodeUsage: panelItem ? panelItem.colorCodeUsage === true : false
+  readonly property bool alarming: panelItem ? panelItem.alarming === true : false
 
   // Quickshell window that hosts this bar slot (not the usage panel popup).
   readonly property var barWindow: button.QsWindow ? button.QsWindow.window : null
 
+  // The bar presses a slot's widget with no coordinates, so the button cannot
+  // tell which chip was clicked. Each chip registers as its own click target
+  // instead, and the bar presses the one under the pointer by geometry. It
+  // scans targets last first, so the chips are re-registered behind the
+  // button's whole-slot target whenever the row or the bar changes.
   function chipItems() {
     var items = []
     for (var i = 0; i < chipRepeater.count; i++) {
@@ -31,10 +39,13 @@ BarWidget {
   function syncChipTargets() {
     var host = root.bar
     if (!host || typeof host.registerClickTarget !== "function") return
+    // Anything of ours that is not the button is a chip, current or rebuilt.
     var registered = host.clickTargets || []
     for (var i = 0; i < registered.length; i++)
       if (registered[i] !== button) host.unregisterClickTarget(registered[i])
     var chips = chipItems()
+    // A lone chip, a vertical bar or an empty report keeps the button as the
+    // only target, and its press toggles the panel the way it always did.
     if (chips.length <= 1) return
     for (var j = 0; j < chips.length; j++) host.registerClickTarget(chips[j])
   }
@@ -78,10 +89,15 @@ BarWidget {
   }
 
   function segmentColor(severity) {
+    if (!root.colorCodeUsage) return button.foreground
     if (!severity) return button.foreground
     if (root.panelItem && typeof root.panelItem.severityColorOf === "function")
       return root.panelItem.severityColorOf(severity)
     return button.foreground
+  }
+
+  function alarmColor(isAlarming) {
+    return isAlarming && button.useActiveColor ? button.activeColor : button.foreground
   }
 
   function escapeHtml(value) {
@@ -107,7 +123,7 @@ BarWidget {
   }
 
   readonly property string tipHtml: {
-    if (root.panelItem && root.panelItem.colorCodeUsage === false) return ""
+    if (!root.colorCodeUsage) return ""
     var rows = root.panelItem ? (root.panelItem.ragTooltipRows || []) : []
     var _g = root.panelItem ? root.panelItem.hexGreen : ""
     var _y = root.panelItem ? root.panelItem.hexYellow : ""
@@ -195,6 +211,9 @@ BarWidget {
 
   onBarChanged: {
     injectPanel()
+    // The bar is injected after the widget completes, and the button's own
+    // registration rides the same change; re-assert the chips once both are
+    // done so the bar scans them ahead of the button.
     Qt.callLater(root.syncChipTargets)
   }
   onSettingsChanged: injectPanel()
@@ -218,12 +237,15 @@ BarWidget {
     labelVisible: false
     hasVisualContent: true
     fontSize: Style.font.bodySmall
-    active: false
+    // Classic alarm chrome when colour-coding is off; with colour-coding on,
+    // per-pool RAG colours carry the signal instead (#278 / #292).
+    active: !root.colorCodeUsage && root.alarming
     // Empty while the colored PopupWindow owns the tip; otherwise plain text
     // for the bar's native tooltip (startup / no RAG rows).
     tooltipText: root.useColorTip ? "" : root.tipPlain
     horizontalMargin: 8.5
-    fixedWidth: root.bar && root.bar.vertical ? -1 : chipRow.implicitWidth + Style.spaceReal(17)
+    // The row's outer chips carry the edge padding, so it is not added here.
+    fixedWidth: root.bar && root.bar.vertical ? -1 : chipRow.implicitWidth
 
     onPressed: function(buttonCode) {
       root.armClickLock()
@@ -240,81 +262,113 @@ BarWidget {
     Row {
       id: chipRow
       anchors.centerIn: parent
-      spacing: Style.space(10)
+      // Every chip carries the gaps beside it, so the row adds none of its own.
+      spacing: 0
       visible: !(root.bar && root.bar.vertical)
 
       Repeater {
         id: chipRepeater
         model: root.panelItem ? root.panelItem.barChips : []
+        // The model is rebuilt when the report changes, which replaces every
+        // delegate and the click targets that point at them.
         onModelChanged: Qt.callLater(root.syncChipTargets)
 
-        Row {
-          id: chipDelegate
-          spacing: Style.space(4)
-          property var chip: modelData
+        // The bar presses a slot's widget by geometry, so the registered target
+        // is the chip's whole column of the slot rather than the glyph inside
+        // it: a press on the padding above, below or beside the glyph would
+        // otherwise reach the button and toggle whichever entry was already
+        // selected. The column owns half of every gap beside it, split at the
+        // midpoint with its neighbour, and the outer columns own the button's
+        // padding at either end, which leaves the widget's width and each
+        // chip's place in it exactly as the plain spacing and padding drew them.
+        Item {
+          id: chipHit
+          readonly property var chip: modelData
+          readonly property var hitGaps: Model.chipHitGaps(index, chipRepeater.count, Style.space(10), Style.spaceReal(17) / 2)
+          height: button.height
+          width: chipContent.implicitWidth + hitGaps.left + hitGaps.right
 
+          // One chip per provider, and the one the pointer is on is the one
+          // the bar presses: left opens that provider's page, while the other
+          // buttons keep their panel-wide meaning.
           function triggerPress(buttonCode) {
+            root.armClickLock()
             if (buttonCode === Qt.RightButton) root.launchDashboard()
             else if (buttonCode === Qt.MiddleButton) root.nextEntry()
-            else if (root.panelItem) root.panelItem.openEntry(chipDelegate.chip.id || "")
-          }
-
-          BrandMark {
-            anchors.verticalCenter: parent.verticalCenter
-            brand: chipDelegate.chip.brand || ""
-            fallback: chipDelegate.chip.icon || "󰚩"
-            foreground: button.foreground
-            fontFamily: button.fontFamily
-            fontSize: button.fontSize
-          }
-
-          Item {
-            width: Style.space(6)
-            height: 1
-            anchors.verticalCenter: parent.verticalCenter
-          }
-
-          Text {
-            visible: !!(chipDelegate.chip.segments && chipDelegate.chip.segments.length > 0
-              && chipDelegate.chip.providerPrefix)
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: chipDelegate.chip.providerPrefix || ""
-            color: button.foreground
-            font.family: button.fontFamily
-            font.pixelSize: button.fontSize
+            else if (root.panelItem) root.panelItem.openEntry(chipHit.chip.id || "")
           }
 
           Row {
+            id: chipContent
+            x: chipHit.hitGaps.left
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 0
-            visible: !!(chipDelegate.chip.segments && chipDelegate.chip.segments.length > 0)
+            spacing: Style.space(4)
 
-            Repeater {
-              model: chipDelegate.chip.segments || []
+            BrandMark {
+              anchors.verticalCenter: parent.verticalCenter
+              brand: chipHit.chip.brand || ""
+              fallback: chipHit.chip.icon || "󰚩"
+              // Colour-coding paints the percentages; classic mode keeps the
+              // alarming brand tint when a critical quota alerts (#278).
+              foreground: root.colorCodeUsage
+                ? button.foreground
+                : root.alarmColor(!!chipHit.chip.alarming)
+              fontFamily: button.fontFamily
+              fontSize: button.fontSize
+            }
 
-              Text {
-                anchors.verticalCenter: parent.verticalCenter
-                textFormat: Text.PlainText
-                text: modelData.text || ""
-                color: root.segmentColor(modelData.severity || "")
-                font.family: button.fontFamily
-                font.pixelSize: button.fontSize
+            Item {
+              width: Style.space(6)
+              height: 1
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+              visible: !!(chipHit.chip.segments && chipHit.chip.segments.length > 0
+                && chipHit.chip.providerPrefix)
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: chipHit.chip.providerPrefix || ""
+              color: root.colorCodeUsage
+                ? button.foreground
+                : root.alarmColor(!!chipHit.chip.alarming)
+              font.family: button.fontFamily
+              font.pixelSize: button.fontSize
+            }
+
+            Row {
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: 0
+              visible: !!(chipHit.chip.segments && chipHit.chip.segments.length > 0)
+
+              Repeater {
+                model: chipHit.chip.segments || []
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: modelData.text || ""
+                  color: root.colorCodeUsage
+                    ? root.segmentColor(modelData.severity || "")
+                    : root.alarmColor(!!chipHit.chip.alarming)
+                  font.family: button.fontFamily
+                  font.pixelSize: button.fontSize
+                }
               }
             }
-          }
 
-          Text {
-            visible: !(chipDelegate.chip.segments && chipDelegate.chip.segments.length > 0)
-              && chipDelegate.chip.label !== ""
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: chipDelegate.chip.label || ""
-            color: chipDelegate.chip.alarming && button.useActiveColor
-              ? button.activeColor
-              : button.foreground
-            font.family: button.fontFamily
-            font.pixelSize: button.fontSize
+            Text {
+              visible: !(chipHit.chip.segments && chipHit.chip.segments.length > 0)
+                && chipHit.chip.label !== ""
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: chipHit.chip.label || ""
+              color: root.colorCodeUsage
+                ? button.foreground
+                : root.alarmColor(!!chipHit.chip.alarming)
+              font.family: button.fontFamily
+              font.pixelSize: button.fontSize
+            }
           }
         }
       }
@@ -324,8 +378,8 @@ BarWidget {
       visible: root.bar && root.bar.vertical
       anchors.centerIn: parent
       textFormat: Text.PlainText
-      text: "󰚩"
-      color: button.foreground
+      text: root.alarming ? "󰅙" : "󰚩"
+      color: button.active && button.useActiveColor ? button.activeColor : button.foreground
       font.family: button.fontFamily
       font.pixelSize: button.fontSize
       rotation: button.textRotation
