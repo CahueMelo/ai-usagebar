@@ -10,6 +10,19 @@ Each release is also published at
 ## [Unreleased]
 
 ### Added
+
+- **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
+  Following upstream release signing introduced in v1.28.0 (#257), `packaging/aur/PKGBUILD-bin`
+  and `.SRCINFO-bin` now declare maintainer key `AE42EF5D73DD92E248815C95B65CCAAF64A99438`
+  in `validpgpkeys` and fetch detached `.sig` signatures alongside each architecture's
+  binary archive (`source_x86_64` and `source_aarch64`), allowing `makepkg` to automatically
+  verify release integrity and authenticity (#282).
+- **Native DeepInfra billing support.** The widget, TUI, aggregate report, and
+  named API-key accounts now read `DEEPINFRA_API_KEY`, combine the documented
+  billing checklist and current-month usage endpoints, convert usage cents to
+  dollars, and show prepaid balance, monthly spend, optional limit, and period.
+- **The Omarchy bar's per-provider chips open that provider.** With **Show all providers** on, a left-click on a chip selects the entry that chip stands for and opens the panel there, the way the panel's own provider buttons do, instead of toggling the panel on whatever was selected last. Clicking the chip the panel already shows closes it; right-click and middle-click keep their panel-wide meaning, and hovering a chip still shows the button tooltip.
+
 ### Changed
 - **The meter colour and the flame follow the pace line, with a tolerance.**
   Any row the least bit over the pace tick was red with a "Limit in …" flame,
@@ -81,9 +94,6 @@ Each release is also published at
   ("AI Usage vX.Y.Z is ready to install.") until it is done, and a failure
   still explains itself there.
 - **The Omarchy palette is read from where Omarchy applies it.** `omarchy-theme-set` writes the active theme to `~/.local/state/omarchy/current/theme`, while the TUI and the widget looked in `~/.config/omarchy/current/theme`, a layout Omarchy no longer populates. The lookup came up empty, the One Dark fallback was silent, and every themed surface stayed One Dark — the older path is now the fallback rather than the only candidate. Theme files that name their colors (`red`, `green`, `yellow`) are also read: only the pre-Omarchy-4 `color1`-`color3` aliases were parsed, so a current theme file would have overridden the foreground and background but left every severity color at One Dark.
-
-### NOHEADING
-- **The Omarchy bar's per-provider chips open that provider.** With **Show all providers** on, a left-click on a chip selects the entry that chip stands for and opens the panel there, the way the panel's own provider buttons do, instead of toggling the panel on whatever was selected last. Clicking the chip the panel already shows closes it; right-click and middle-click keep their panel-wide meaning, and hovering a chip still shows the button tooltip.
 
 ## [1.28.0] — 2026-09-29
 
