@@ -39,6 +39,9 @@ Each release is also published at
   in Left and Used mode, in the tray popover and in the Linux Mint tray.
 
 ### Fixed
+- **The macOS Z.AI row says “MCP tools” without the monthly suffix.**
+  The suffix made the row wider than the other usage rows, while the reset
+  countdown already shows the length of the quota window.
 - **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
   Terminal output from `account add`, `account switch`, and `account merge-history`
   previously interpolated raw `.display()` paths and unsanitized labels directly
