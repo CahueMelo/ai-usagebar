@@ -40,6 +40,18 @@ use crate::format;
 /// threshold (97 → 96 → 97) does not re-fire on every refresh.
 const HYSTERESIS_PCT: i32 = 7;
 
+/// How much later a reported reset instant has to be before it counts as a new
+/// window. Vendors report that instant with sub-second precision that jitters
+/// between fetches — Anthropic's five-hour window came back 0.7s apart on two
+/// fetches four minutes apart — and a rolling window slides its reset forward
+/// with the refresh interval, so a strict comparison re-armed the key and
+/// re-notified on refresh with nothing changed. Ninety minutes clears every
+/// refresh interval this ships with (the bar's default is five minutes and its
+/// maximum an hour; the tray refreshes every ten at most) and stays far below
+/// the shortest window, so a real new window still moves the instant by more
+/// than this.
+const RESET_MOVE_TOLERANCE_SECS: i64 = 90 * 60;
+
 /// How long before a banked reset credit's expiry the warning fires.
 const CREDIT_WARNING_SECS: i64 = 48 * 3600;
 
@@ -188,10 +200,13 @@ pub fn decide(
 
 /// `true` when `current` is a later reset than `snapshot` — a `None → Some`
 /// change counts (the vendor started reporting a reset), `Some → None` and
-/// backwards moves do not.
+/// backwards moves do not, and so do not moves within
+/// [`RESET_MOVE_TOLERANCE_SECS`], which are the same window reported again.
 fn reset_moved_later(current: Option<DateTime<Utc>>, snapshot: Option<DateTime<Utc>>) -> bool {
     match (current, snapshot) {
-        (Some(current), Some(snapshot)) => current > snapshot,
+        (Some(current), Some(snapshot)) => {
+            current.signed_duration_since(snapshot).num_seconds() > RESET_MOVE_TOLERANCE_SECS
+        }
         (Some(_), None) => true,
         _ => false,
     }
@@ -703,6 +718,40 @@ mod tests {
         assert!(!state.is_notified("anthropic@gmail::Weekly (7d)"));
         // …so the next crossing is a new crossing.
         assert_eq!(fires_at(97, &mut state), 1, "re-armed crossing fires");
+    }
+
+    #[test]
+    fn a_jittered_reset_instant_is_the_same_window() {
+        // Observed live on Anthropic's five-hour window: two fetches four
+        // minutes apart reported the same window's reset 0.70s apart, and the
+        // strict comparison re-armed the key and re-notified on refresh with
+        // nothing changed.
+        let mut state = NotifyState::default();
+        let now = at(23, 12, 0);
+        let reset = at(23, 17, 0);
+        let first = input(vec![row("Session (5h)", 100, Some(reset))]);
+        assert_eq!(decide(&first, 97, &mut state, now).len(), 1);
+
+        for drift in [
+            chrono::Duration::milliseconds(488),
+            chrono::Duration::milliseconds(700),
+            chrono::Duration::seconds(59),
+        ] {
+            let jittered = input(vec![row("Session (5h)", 100, Some(reset + drift))]);
+            assert_eq!(
+                decide(&jittered, 97, &mut state, now).len(),
+                0,
+                "{drift:?} later is the same window"
+            );
+        }
+
+        // A window that really rolled over moves the instant by its length.
+        let next_window = input(vec![row(
+            "Session (5h)",
+            100,
+            Some(reset + chrono::Duration::hours(5)),
+        )]);
+        assert_eq!(decide(&next_window, 97, &mut state, now).len(), 1);
     }
 
     #[test]
