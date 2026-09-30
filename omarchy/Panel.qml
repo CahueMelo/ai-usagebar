@@ -283,7 +283,10 @@ Panel {
     if (!item) return false
     if (isCursorEntry(item) && typeof Model.cursorDualHeadline === "function") {
       var dual = Model.cursorDualHeadline(item, cursorPoolFlags())
-      if (dual) return dual.severity === "critical"
+      // Brand / active chrome only when every visible Cursor pool is critical.
+      // A lone exhausted pool still paints that segment red when colour-coding
+      // is off; it must not tint the icon while another pool is still fine.
+      if (dual) return dual.allCritical === true
     }
     return Model.isAlarming(item)
   }
@@ -425,6 +428,7 @@ Panel {
         text: dual.text,
         tooltip: dual.tooltip || dual.text,
         severity: dual.severity,
+        allCritical: dual.allCritical === true,
         segments: dual.segments || [],
         tooltipRows: dual.tooltipRows || []
       }
@@ -484,7 +488,22 @@ Panel {
       var chip = chips[i]
       var pools = i < rows.length ? cursorPools(rows[i]) : null
       if (!pools || chip.label === "!") {
-        next.push(chip)
+        if (chip.label === "!" || i >= rows.length) {
+          next.push(chip)
+          continue
+        }
+        // Non-Cursor chips: headline severity drives icon RAG when colour-coding is on.
+        var head = Model.headline(rows[i], barWindow)
+        next.push({
+          id: chip.id,
+          brand: chip.brand,
+          icon: chip.icon,
+          label: chip.label,
+          providerPrefix: "",
+          alarming: chip.alarming,
+          severity: head && head.severity ? head.severity : "",
+          segments: chip.segments || []
+        })
         continue
       }
       var label = pools.text
@@ -497,13 +516,22 @@ Panel {
         }
       }
       var segs = pools.segments || []
+      // Cursor icon chrome (classic): allCritical. RAG icon uses severity
+      // (worst / max-used among visible pools — status highest-severity rule).
+      var chipAlarm = chip.alarming
+      if (pools.allCritical === true || pools.allCritical === false) {
+        chipAlarm = pools.allCritical === true
+      } else if (pools.severity === "low" || pools.severity === "mid" || pools.severity === "high"
+          || pools.severity === "critical") {
+        chipAlarm = pools.severity === "critical"
+      }
       next.push({
         id: chip.id,
         brand: chip.brand,
         icon: chip.icon,
         label: label,
         providerPrefix: providerPrefix,
-        alarming: false,
+        alarming: chipAlarm,
         severity: pools.severity || "",
         segments: segs
       })
@@ -766,11 +794,12 @@ Panel {
               BrandMark {
                 brand: root.settingsOpen ? "" : Model.brandIconFile(root.entry)
                 fallback: root.settingsOpen ? "󰒓" : Model.providerIcon(root.entry)
-                // Colour-coding paints the meters; classic mode keeps the
-                // alarming brand tint when a critical quota alerts (#278).
+                // Colour-coding: full RAG from worst pool. Off: same aggregate,
+                // binary foreground vs urgent when worst is critical.
                 foreground: root.colorCodeUsage
-                  ? root.foreground
-                  : (root.entryAlarming ? root.urgent : root.foreground)
+                  ? root.severityColorOf(root.summary.severity || "")
+                  : ((root.summary.severity || "") === "critical"
+                    ? root.urgent : root.foreground)
                 fontFamily: root.fontFamily
                 fontSize: Style.font.display
               }

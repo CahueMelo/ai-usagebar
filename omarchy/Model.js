@@ -765,6 +765,13 @@ function cursorDualHeadline(entry, flags) {
   }
   var text = texts.join(" · ")
   var tooltip = lines.join("\n")
+  var allCritical = parts.length > 0
+  for (var c = 0; c < parts.length; c++) {
+    if (parts[c].severity !== "critical") {
+      allCritical = false
+      break
+    }
+  }
   return {
     text: text,
     tooltip: tooltip,
@@ -772,6 +779,9 @@ function cursorDualHeadline(entry, flags) {
     tooltipRows: tooltipRows,
     percent: worse.percent,
     severity: worse.severity,
+    // Icon / button chrome: only when every visible pool is critical, so a
+    // single exhausted pool does not paint the brand mark while siblings are fine.
+    allCritical: allCritical,
     label: "Cursor Models · Other Models"
   }
 }

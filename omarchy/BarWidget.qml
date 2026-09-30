@@ -89,15 +89,33 @@ BarWidget {
   }
 
   function segmentColor(severity) {
-    if (!root.colorCodeUsage) return button.foreground
-    if (!severity) return button.foreground
-    if (root.panelItem && typeof root.panelItem.severityColorOf === "function")
-      return root.panelItem.severityColorOf(severity)
-    return button.foreground
+    // Colour-coding on: full RAG. Off: only critical segments take the
+    // classic alarm tint so "34% · 100%" paints just the exhausted pool red.
+    if (root.colorCodeUsage) {
+      if (!severity) return button.foreground
+      if (root.panelItem && typeof root.panelItem.severityColorOf === "function")
+        return root.panelItem.severityColorOf(severity)
+      return button.foreground
+    }
+    return severity === "critical" ? root.alarmColor(true) : button.foreground
   }
 
   function alarmColor(isAlarming) {
     return isAlarming && button.useActiveColor ? button.activeColor : button.foreground
+  }
+
+  // Icon tint:
+  // - colour-coding on: full RAG from worst visible pool (max used / min
+  //   remaining) — status highest-severity aggregate, never an average.
+  // - colour-coding off: same aggregate, binary white/foreground vs red.
+  function chipIconColor(chip) {
+    var sev = chip && chip.severity ? String(chip.severity) : ""
+    if (root.colorCodeUsage) {
+      if (root.panelItem && typeof root.panelItem.severityColorOf === "function")
+        return root.panelItem.severityColorOf(sev)
+      return button.foreground
+    }
+    return sev === "critical" ? root.alarmColor(true) : button.foreground
   }
 
   function escapeHtml(value) {
@@ -303,22 +321,33 @@ BarWidget {
             x: chipHit.hitGaps.left
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(4)
+            // Trailing value / provider tag after the brand mark. When
+            // showValue is off the chip is icon-only — collapsing this keeps
+            // the slot on the same edge padding as a plain WidgetButton
+            // (hitGaps still owns Style.spaceReal(17)/2 each side).
+            readonly property bool hasTrailing: {
+              var c = chipHit.chip
+              if (!c) return false
+              if (c.segments && c.segments.length > 0) return true
+              if (String(c.providerPrefix || "") !== "") return true
+              if (String(c.label || "") !== "") return true
+              return false
+            }
 
             BrandMark {
               anchors.verticalCenter: parent.verticalCenter
               brand: chipHit.chip.brand || ""
               fallback: chipHit.chip.icon || "󰚩"
-              // Colour-coding paints the percentages; classic mode keeps the
-              // alarming brand tint when a critical quota alerts (#278).
-              foreground: root.colorCodeUsage
-                ? button.foreground
-                : root.alarmColor(!!chipHit.chip.alarming)
+              // Colour-coding: full RAG from worst pool. Off: same aggregate,
+              // binary foreground vs red when worst is critical.
+              foreground: root.chipIconColor(chipHit.chip)
               fontFamily: button.fontFamily
               fontSize: button.fontSize
             }
 
             Item {
-              width: Style.space(6)
+              visible: chipContent.hasTrailing
+              width: visible ? Style.space(6) : 0
               height: 1
               anchors.verticalCenter: parent.verticalCenter
             }
@@ -348,9 +377,7 @@ BarWidget {
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
                   text: modelData.text || ""
-                  color: root.colorCodeUsage
-                    ? root.segmentColor(modelData.severity || "")
-                    : root.alarmColor(!!chipHit.chip.alarming)
+                  color: root.segmentColor(modelData.severity || "")
                   font.family: button.fontFamily
                   font.pixelSize: button.fontSize
                 }
