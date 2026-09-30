@@ -24,7 +24,7 @@ use crate::error::{AppError, Result};
 #[derive(Debug, Clone)]
 pub struct Outcome<T> {
     pub snapshot: T,
-    /// The payload is past its TTL — shown, but marked.
+    /// The payload could not be refreshed — shown, but marked.
     pub stale: bool,
     /// The failure recorded by the most recent unsuccessful refresh, redacted
     /// by [`Cache::write_last_error`]. `None` means the last refresh worked.
@@ -54,7 +54,10 @@ impl<T> Outcome<T> {
     pub fn cached(snapshot: T, cache: &Cache, stale: bool) -> Self {
         Self {
             snapshot,
-            stale,
+            // A 429 backoff can hand an expired payload through the normal
+            // cache fast path. Keep the failure marker visible to frontends
+            // even when the vendor passed `false` for that fast path.
+            stale: stale || cache.is_stale() || cache.backoff_remaining().is_some(),
             last_error: cache.read_last_error(),
             cache_age: cache.payload_age(),
         }
@@ -184,6 +187,29 @@ mod tests {
 
         assert!(out.stale);
         assert_eq!(out.last_error, Some((500, "upstream is down".to_string())));
+    }
+
+    #[test]
+    fn a_backoff_cache_hit_is_marked_stale() {
+        let (_td, cache) = fixture();
+        cache.write_payload(b"last good").unwrap();
+        cache.write_last_error(429, "rate limited");
+
+        // Vendor fast paths call cached(..., false), including when the
+        // shared cache serves old data during a 429 backoff.
+        let out = Outcome::cached("last good", &cache, false);
+
+        assert!(out.stale);
+        assert_eq!(out.last_error.as_ref().map(|(code, _)| *code), Some(429));
+    }
+
+    #[test]
+    fn a_cached_outcome_keeps_an_existing_stale_marker() {
+        let (_td, cache) = fixture();
+        cache.write_payload(b"last good").unwrap();
+        cache.mark_stale();
+
+        assert!(Outcome::cached("last good", &cache, false).stale);
     }
 
     #[test]

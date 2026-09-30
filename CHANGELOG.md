@@ -9,6 +9,14 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cached quotas stay marked stale during HTTP 429 backoff.** An expired
+  payload served while requests are paused no longer appears fresh in the
+  report and desktop frontends.
+- **Linux Mint tray polls quota endpoints every five minutes.** The previous
+  one-minute interval could trigger Claude and Codex rate limits.
+
 ## [1.29.0] — 2026-09-30
 
 ### Added
