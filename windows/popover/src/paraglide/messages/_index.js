@@ -154,6 +154,7 @@ import { getLocale, experimentalStaticLocale } from "../runtime.js"
 /** @typedef {{ duration: NonNullable<unknown> }} Pace_Shows_After_FirstInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_LeftInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Left_At_ResetInputs */
+/** @typedef {{ percent: NonNullable<unknown> }} Percent_Over_PaceInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_SpareInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_UsedInputs */
 /** @typedef {{}} Popover_StyleInputs */
@@ -2392,6 +2393,20 @@ export const percent_left_at_reset = /** @type {((inputs: Percent_Left_At_ResetI
 	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
 	if (locale === "pt-BR") return __pt_br2.percent_left_at_reset(inputs)
 	return __en.percent_left_at_reset(inputs)
+});
+/**
+* | output |
+* | --- |
+* | "~{percent}% over pace" |
+*
+* @param {Percent_Over_PaceInputs} inputs
+* @param {{ locale?: "en" | "pt-BR" }} options
+* @returns {LocalizedString}
+*/
+export const percent_over_pace = /** @type {((inputs: Percent_Over_PaceInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Percent_Over_PaceInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs, options = {}) => {
+	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
+	if (locale === "pt-BR") return __pt_br2.percent_over_pace(inputs)
+	return __en.percent_over_pace(inputs)
 });
 /**
 * | output |

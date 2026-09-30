@@ -333,7 +333,7 @@ impl App {
 
     /// Like [`App::new`] but with an explicit theme. Lets tests build an `App`
     /// without reading the real Omarchy theme file
-    /// (`$HOME/.config/omarchy/current/theme/colors.toml`) — `new` resolves
+    /// (`~/.local/state/omarchy/current/theme/colors.toml`) — `new` resolves
     /// that path and the `$HOME` env var via `merged_with_omarchy`, which is
     /// not hermetic. Production code uses `new`/`new_with_primary`.
     pub fn with_theme(tabs_meta: Vec<TabId>, theme: Theme) -> Self {
@@ -725,6 +725,19 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
             let outcome =
                 crate::deepseek::fetch_snapshot(client, &api_key, &cache, &endpoints, DEFAULT_TTL)
                     .await?;
+            Ok(outcome.into())
+        }
+        VendorId::Deepinfra => {
+            let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
+            let endpoints = crate::deepinfra::fetch::Endpoints::default();
+            let outcome = crate::deepinfra::fetch::fetch_snapshot(
+                client,
+                &api_key,
+                &cache,
+                &endpoints,
+                DEFAULT_TTL,
+            )
+            .await?;
             Ok(outcome.into())
         }
         VendorId::Kimi => {

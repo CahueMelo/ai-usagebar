@@ -106,6 +106,7 @@ fn parse_slug(s: &str) -> Option<VendorId> {
         "zai" => Some(VendorId::Zai),
         "openrouter" => Some(VendorId::Openrouter),
         "deepseek" => Some(VendorId::Deepseek),
+        "deepinfra" => Some(VendorId::Deepinfra),
         "kimi" => Some(VendorId::Kimi),
         "kilo" => Some(VendorId::Kilo),
         "novita" => Some(VendorId::Novita),

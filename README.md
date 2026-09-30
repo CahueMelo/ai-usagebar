@@ -1,6 +1,6 @@
 # ai-usagebar
 
-Native Omarchy Quattro panel, Waybar widget, and tabbed TUI for AI plan usage across **Claude**, **Codex/ChatGPT**, **GitHub Copilot**, **Z.AI (GLM)**, **OpenRouter**, **DeepSeek**, **Kimi**, **Nous Research**, **OpenCode Go**, **Command Code**, and other supported AI coding services.
+Native Omarchy Quattro panel, Waybar widget, and tabbed TUI for AI plan usage across **Claude**, **Codex/ChatGPT**, **GitHub Copilot**, **Z.AI (GLM)**, **OpenRouter**, **DeepSeek**, **DeepInfra**, **Kimi**, **Nous Research**, **OpenCode Go**, **Command Code**, and other supported AI coding services.
 
 ai-usagebar began as a Rust port of
 [`claudebar`](https://github.com/mryll/claudebar) and remains drop-in
@@ -281,6 +281,7 @@ come from environment variables or `config.toml`.
 | Z.AI | API key (`ZAI_API_KEY` env or `[zai] api_key` in config) | Set either. |
 | OpenRouter | API key (`OPENROUTER_API_KEY` env or `[openrouter] api_key` in config) | Set either. Multiple keys: one `[[openrouter.accounts]]` entry each. |
 | DeepSeek | API key (`DEEPSEEK_API_KEY` or config) | Set either and opt in. |
+| DeepInfra | API key (`DEEPINFRA_API_KEY` or config) | Set either and opt in. Reports prepaid balance and current-month spend. |
 | Kimi | Existing Kimi Code CLI login **or** API key (`KIMI_API_KEY` or config) | Opt in, then either log in with `kimi` (nothing to paste) or set an API key, which wins when present. A Kimi For Coding subscription can issue one at kimi.com/code/console. |
 | Kilo | API key (`KILO_API_KEY` env or `[kilo] api_key` in config) | Set either. Opt-in. For a team balance, also set `[kilo] organization_id`; omit it for the personal balance. |
 | Novita | API key (`NOVITA_API_KEY` env or `[novita] api_key` in config) | Set either. Opt-in. |
@@ -367,7 +368,7 @@ rather than silently querying the wrong URL.
 
 #### Giving a prepaid balance a tank
 
-DeepSeek, Kilo, Novita, Moonshot and prepaid Grok report money **left** and no
+DeepSeek, DeepInfra, Kilo, Novita, Moonshot and prepaid Grok report money **left** and no
 denominator, so their row is a plain balance rather than a meter. Tell them how
 big the tank is and it becomes one:
 
@@ -388,7 +389,7 @@ take `headline`. Full rules in
 ### Enabling a vendor
 
 `enabled = true` is what makes a vendor fetch. Anthropic API, GitHub Copilot,
-DeepSeek, Kimi, Kilo, Novita, Moonshot, Grok, SuperGrok, Grok Bot, Antigravity,
+DeepSeek, DeepInfra, Kimi, Kilo, Novita, Moonshot, Grok, SuperGrok, Grok Bot, Antigravity,
 Cursor, MiniMax, and Kiro CLI all default to **disabled** so that existing
 installs are unaffected until you opt in. Use either method:
 
@@ -610,6 +611,7 @@ ai-usagebar --vendor copilot
 ai-usagebar --vendor zai
 ai-usagebar --vendor openrouter
 ai-usagebar --vendor deepseek
+ai-usagebar --vendor deepinfra
 ai-usagebar --vendor kimi
 ai-usagebar --vendor kiro
 
@@ -999,7 +1001,7 @@ Waybar examples.
 
 ### Multiple keys for other API-key providers
 
-Z.AI, DeepSeek, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the
+Z.AI, DeepSeek, DeepInfra, Kilo, Novita, Moonshot, Grok, MiniMax, and OrcaRouter take the
 same array: one `[[<vendor>.accounts]]` entry per extra key, selected with
 `--vendor <vendor> --account <label>`. Region, team, organization, and display
 settings stay per provider. See the
@@ -1170,7 +1172,7 @@ After saving:
 ## Theming
 
 - One Dark palette by default.
-- Auto-merges with the active Omarchy theme at `~/.config/omarchy/current/theme/colors.toml`.
+- Auto-merges with the active Omarchy theme at `~/.local/state/omarchy/current/theme/colors.toml` (the older `~/.config/omarchy/current/theme/colors.toml` location is still read when that file is absent).
 - Per-color overrides: `--color-low`, `--color-mid`, `--color-high`, `--color-critical` (claudebar-compatible).
 
 ## Changelog

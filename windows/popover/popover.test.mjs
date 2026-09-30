@@ -38,6 +38,8 @@ import {
   LAYOUT_KEY,
   normalizeLayout,
   meterColor,
+  paceNote,
+  paceVerdict,
   resetText,
   resetAlternate,
   formatResetExact,
@@ -76,6 +78,7 @@ import {
   updateModeLabel,
   updateAction,
   updateMessage,
+  bannerMessage,
   optionsMenuLabels,
   menuAction,
 } from './src/model.js';
@@ -298,6 +301,21 @@ assert.equal(
 );
 assert.ok(!friendlyError('Zai: no API key in C:\\Users\\dj4lm\\AppData\\Roaming\\ai-usagebar\\config\\config.toml.').includes('AppData'));
 
+// A diagnostic keeps its path, with only the home prefix folded to `~`; a
+// space inside the path must not cut it (macOS `Application Support`).
+{
+  const mac = friendlyError('Credentials error. Cursor database not found at /Users/someone/Library/Application Support/Cursor/User/globalStorage/state.vscdb. Open the Cursor IDE and sign in.');
+  assert.ok(mac.includes('~/Library/Application Support/Cursor/User/globalStorage/state.vscdb'), mac);
+  assert.ok(!mac.includes('someone'), mac);
+  const win = friendlyError('Credentials error. Cursor database not found at C:\\Users\\someone\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb. Open the Cursor IDE and sign in.');
+  assert.ok(win.includes('~\\AppData\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb'), win);
+  assert.ok(!win.includes('someone'), win);
+  const linux = friendlyError('Credentials error. file missing at /home/someone/.config/cursor/auth.json, sign in.');
+  assert.ok(linux.includes('~/.config/cursor/auth.json'), linux);
+  assert.ok(!linux.includes('someone'), linux);
+  assert.ok(friendlyError('Credentials error. not found at /root/.x/y.json.').includes('~/.x/y.json'));
+}
+
 assert.equal(displayPlan('Claude', 'Claude Max 5x'), 'Max 5x');
 assert.equal(displayPlan('Claude', 'Team 5x'), 'Team 5x');
 assert.equal(displayPlan('Codex', 'Plus'), 'Plus');
@@ -518,17 +536,73 @@ assert.equal(updateStatusLabel({ update: null, updateCheckedAt: 0 }, 0, 'pt-BR')
 
 // --- meterColor --------------------------------------------------------------
 
-assert.equal(meterColor('low'), 'blue');
-assert.equal(meterColor('mid'), 'yellow');
-assert.equal(meterColor('high'), 'yellow');
-assert.equal(meterColor('critical'), 'red');
-assert.equal(meterColor('nope'), 'blue');
+// Without a projection the bar reads what is left: blue with room, yellow as
+// it runs down, red near the limit.
+assert.equal(meterColor(100), 'blue');
+assert.equal(meterColor(50), 'blue');
+assert.equal(meterColor(49), 'yellow');
+assert.equal(meterColor(20), 'yellow');
+assert.equal(meterColor(19), 'red');
+assert.equal(meterColor(0), 'red');
+assert.equal(meterColor(80, null, true), 'red');
 assert.equal(meterColor(undefined), 'blue');
-assert.equal(meterColor('low', { state: 'ahead', sparePercent: 40 }), 'blue');
-assert.equal(meterColor('low', { state: 'onTrack', sparePercent: 2 }), 'yellow');
-assert.equal(meterColor('low', { state: 'onTrack', sparePercent: 0 }), 'red');
-assert.equal(meterColor('low', { state: 'behind', sparePercent: -12 }), 'red');
-assert.equal(meterColor('low', null, true), 'red');
+assert.equal(meterColor(NaN), 'blue');
+// With one, the verdict against the pace line decides: the ratio and the gap
+// between the bar and the tick must both pass their threshold.
+{
+  // A row `used`% spent with `elapsed`% of its window gone.
+  const row = (used, elapsed) => {
+    const projectedPercent = used * 100 / elapsed;
+    return {
+      left: 100 - used,
+      pace: {
+        state: projectedPercent > 100 ? 'behind' : projectedPercent <= 90 ? 'ahead' : 'onTrack',
+        projectedPercent,
+        sparePercent: Math.round(100 - projectedPercent),
+        runsOutMs: null,
+        elapsedPercent: elapsed,
+      },
+    };
+  };
+  const verdict = (used, elapsed) => { const r = row(used, elapsed); return paceVerdict(r.pace, r.left); };
+  const color = (used, elapsed) => { const r = row(used, elapsed); return meterColor(r.left, r.pace); };
+  // Mid-window the ratio decides: 110% and 130% are the boundaries.
+  assert.equal(verdict(55, 50), 'calm'); // 110%, 5 pp
+  assert.equal(verdict(56, 50), 'over'); // 112%, 6 pp
+  assert.equal(color(60, 50), 'yellow'); // 120%
+  assert.equal(verdict(65, 50), 'over'); // 130%
+  assert.equal(verdict(66, 50), 'critical'); // 132%, 16 pp
+  assert.equal(color(62, 44.6), 'red'); // Codex, ~139%
+  assert.equal(color(84, 57.6), 'red'); // Cursor, ~146%
+  assert.equal(color(54, 67.9), 'blue'); // ~80%
+  // Early in a week one whole percent swings the ratio: the gap keeps it calm.
+  const early = 100 * 8 / 168; // eight hours into a week, ~4.8%
+  assert.equal(verdict(5, early), 'calm'); // ~105%
+  assert.equal(verdict(6, early), 'calm'); // ~126%, 1.2 pp
+  assert.equal(verdict(7, early), 'calm'); // ~147%, 2.2 pp
+  assert.equal(verdict(9, early), 'over'); // ~189%, 4.2 pp
+  assert.equal(verdict(10, early), 'critical'); // ~210%, 5.2 pp
+  assert.equal(color(7, early), 'blue');
+  // Past 130% but only 3-5 points over the tick is a look, not a run-out.
+  assert.equal(verdict(8, early), 'over'); // ~168%, 3.2 pp
+  // Nearly spent and over the line is critical whatever the margins...
+  assert.equal(verdict(92, 90), 'critical');
+  // ...but nearly spent on pace is not a run-out warning.
+  assert.equal(verdict(92, 97), 'calm');
+  assert.equal(color(92, 97), 'blue');
+  assert.equal(paceVerdict(null, 50), null);
+  // Notes: only critical warns of a run-out; over says by how much; calm over 100% has no spare.
+  const over = row(60, 50);
+  assert.equal(paceNote(over.pace, over.left, 0), '~20% over pace');
+  assert.equal(paceNote(over.pace, over.left, 0, { locale: 'pt-BR' }), '~20% acima do ritmo');
+  const hair = row(7, early);
+  assert.equal(paceNote(hair.pace, hair.left, 0), '~0% spare');
+  const ahead = row(40, 50);
+  assert.equal(paceNote(ahead.pace, ahead.left, 0), '~20% left at reset');
+  const critical = row(70, 50);
+  assert.equal(paceNote({ ...critical.pace, runsOutMs: 30 * 60_000 }, critical.left, 0), 'Limit in 30m');
+  assert.equal(paceNote(null, 50, 0), '');
+}
 
 // --- resetText / resetAlternate / formatResetExact ---------------------------
 
@@ -958,6 +1032,14 @@ assert.equal(resetAlternate(badStampRow, 'exact', resetNow, utc), '');
   assert.equal(updateMessage(withUpdate('failed', { error: 'offline' }).update), "Couldn't update: offline");
   assert.equal(updateMessage(withUpdate('failed', { error: 'HTTP 503', version: '' }).update), "Couldn't check: HTTP 503");
   assert.equal(updateMessage(null), '');
+  // The banner leaves progress to its button: the sentence keeps naming the release.
+  for (const state of ['checking', 'downloading', 'installing']) {
+    const msg = bannerMessage(withUpdate(state, { installable: true }).update);
+    assert.equal(msg, 'AI Usage v1.11.0 is ready to install.', state);
+    assert.doesNotMatch(msg, /Updating|Downloading|Installing|Looking/, state);
+  }
+  assert.equal(bannerMessage(withUpdate('failed', { error: 'offline' }).update), "Couldn't update: offline");
+  assert.equal(bannerMessage(null), '');
   assert.equal(parseHostPayload({ update: { state: 'available', installable: 'yes' } }).update.installable, false);
   assert.equal(parseHostPayload({ update: { state: 'available', installable: true } }).update.installable, true);
 
