@@ -17,6 +17,7 @@ Column {
   property bool showValue: true
   property bool showProvider: false
   property bool showAll: false
+  property bool colorCodeUsage: false
   property string barWindow: "auto"
   readonly property color dim: Qt.darker(foreground, 1.45)
 
@@ -48,6 +49,7 @@ Column {
   signal showValueRequested(bool enabled)
   signal showProviderRequested(bool enabled)
   signal showAllRequested(bool enabled)
+  signal colorCodeUsageRequested(bool enabled)
   signal barWindowRequested(string value)
   signal closeRequested()
 
@@ -288,6 +290,16 @@ Column {
       fontFamily: root.fontFamily
       enabled: !root.saving
       onClicked: root.showAllRequested(!root.showAll)
+    }
+    Toggle {
+      width: parent.width
+      label: "Color-code usage by level"
+      description: "Paint bar values, panel meters, and the tooltip green → yellow → orange → red as usage climbs, using your Omarchy theme. Turn off for a single foreground color everywhere. Off by default. Applies immediately."
+      checked: root.colorCodeUsage
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      enabled: !root.saving
+      onClicked: root.colorCodeUsageRequested(!root.colorCodeUsage)
     }
   }
 

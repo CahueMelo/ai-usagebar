@@ -51,7 +51,10 @@ omarchy plugin remove akitaonrails.ai-usagebar
   icon-and-value label and a compact icon-only label without hiding panel or
   tooltip details. Its **Show provider name in the top bar** toggle adds the
   provider's three-letter code in front of that value — the same code Waybar's
-  `{vendor_short}` prints — and is off by default. Its **Top bar usage window**
+  `{vendor_short}` prints — and is off by default. Its **Color-code usage by
+  level** toggle paints bar values, panel meters, and the tooltip green →
+  yellow → orange → red from the Omarchy theme as usage climbs, and is off by
+  default. Its **Top bar usage window**
   dropdown pins the bar to auto (highest), 5-hour, weekly, or monthly; the
   tooltip and panel hero echo the pinned value while the panel rows keep
   showing every window and alert state still follows the highest percent.
@@ -127,6 +130,10 @@ omarchy bar set akitaonrails.ai-usagebar showProvider true --json
 # Show every configured provider's icon and usage at once. The default is false.
 omarchy bar set akitaonrails.ai-usagebar showAll true --json
 
+# Color-code bar values, panel meters, and the tooltip by usage level
+# (green → yellow → orange → red from the Omarchy theme). The default is false.
+omarchy bar set akitaonrails.ai-usagebar colorCodeUsage true --json
+
 # Which quota window the top bar shows: auto (highest, the historical
 # default), session (5-hour), weekly (7-day), or monthly. The default is auto.
 omarchy bar set akitaonrails.ai-usagebar barWindow session
@@ -142,7 +149,8 @@ omarchy bar set akitaonrails.ai-usagebar showCursorOnDemand false --json
 The refresh interval is clamped to 30–3600 seconds. The `provider` setting
 prefers an exact entry id; if there is no exact match, a base id such as
 `anthropic` selects all accounts for that provider. `showValue`,
-`showProvider`, and `showAll` change only the top-bar label; `barWindow`
+`showProvider`, and `showAll` change only the top-bar label; `colorCodeUsage`
+also recolors the panel meters and tooltip; `barWindow`
 changes the top-bar value and its tooltip/hero echo; none hide report
 details or change provider fetching. Cursor is the exception to the window
 pin: its two included pools are model categories, so the chip shows Cursor

@@ -11,6 +11,13 @@ Each release is also published at
 
 ### Added
 
+- **Omarchy can color-code usage by level.** The Quattro bar chips, panel meters,
+  and hover tooltip can paint green → yellow → orange → red as usage climbs,
+  reading those colours from the active Omarchy theme (`colors.toml`) with
+  Quattro's urgent colour for the critical rung. A new **Color-code usage by
+  level** display toggle (`colorCodeUsage`, off by default) turns the palette
+  on or off immediately; when it is off, everything stays on the normal
+  foreground colour.
 - **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
   Following upstream release signing introduced in v1.28.0 (#257), `packaging/aur/PKGBUILD-bin`
   and `.SRCINFO-bin` now declare maintainer key `AE42EF5D73DD92E248815C95B65CCAAF64A99438`
@@ -39,6 +46,10 @@ Each release is also published at
   in Left and Used mode, in the tray popover and in the Linux Mint tray.
 
 ### Fixed
+- **Omarchy's open-panel underline spans the full chip width.** Quattro's bar
+  paints the active-plugin mark at ~55% of the slot unless the widget hints
+  otherwise; the AI Usage chip now reports its full width so the underline
+  tracks Cursor's multi-percentage label as indicators come and go.
 - **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
   Terminal output from `account add`, `account switch`, and `account merge-history`
   previously interpolated raw `.display()` paths and unsanitized labels directly
