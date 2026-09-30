@@ -79,6 +79,20 @@ enum RemoveOutcome {
     NotInstalled,
 }
 
+fn setup_message(outcome: SetupOutcome) -> &'static str {
+    match outcome {
+        SetupOutcome::Installed => "Antigravity status line installed.",
+        SetupOutcome::AlreadyInstalled => "Antigravity status line was already installed.",
+    }
+}
+
+fn remove_message(outcome: RemoveOutcome) -> &'static str {
+    match outcome {
+        RemoveOutcome::Removed => "Antigravity status line removed.",
+        RemoveOutcome::NotInstalled => "No AI UsageBar status line to remove.",
+    }
+}
+
 #[cfg(any(target_os = "macos", test))]
 trait ProcessInspector {
     fn parent_pid(&self, pid: u32) -> Option<u32>;
@@ -206,10 +220,7 @@ pub fn run(action: &crate::widget::cli::AntigravityAction) -> i32 {
                     return 1;
                 }
             };
-            setup(&path, &executable).map(|outcome| match outcome {
-                SetupOutcome::Installed => "Antigravity status line instalada.",
-                SetupOutcome::AlreadyInstalled => "Antigravity status line já estava instalada.",
-            })
+            setup(&path, &executable).map(setup_message)
         }
         AntigravityAction::RemoveStatusline => {
             let path = match antigravity_settings_path() {
@@ -232,10 +243,7 @@ pub fn run(action: &crate::widget::cli::AntigravityAction) -> i32 {
                     return 1;
                 }
             };
-            remove(&path, &executable).map(|outcome| match outcome {
-                RemoveOutcome::Removed => "Antigravity status line removida.",
-                RemoveOutcome::NotInstalled => "Nenhuma status line do AI UsageBar para remover.",
-            })
+            remove(&path, &executable).map(remove_message)
         }
     };
     match result {
@@ -714,6 +722,26 @@ mod tests {
             "plan_tier": "Google AI Pro",
             "quota": quota,
         })
+    }
+
+    #[test]
+    fn setup_and_remove_outcomes_use_english_cli_messages() {
+        assert_eq!(
+            setup_message(SetupOutcome::Installed),
+            "Antigravity status line installed."
+        );
+        assert_eq!(
+            setup_message(SetupOutcome::AlreadyInstalled),
+            "Antigravity status line was already installed."
+        );
+        assert_eq!(
+            remove_message(RemoveOutcome::Removed),
+            "Antigravity status line removed."
+        );
+        assert_eq!(
+            remove_message(RemoveOutcome::NotInstalled),
+            "No AI UsageBar status line to remove."
+        );
     }
 
     #[test]

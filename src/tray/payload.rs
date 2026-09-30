@@ -352,7 +352,7 @@ mod tests {
             .map(|index| {
                 json!({
                     "id": format!("antigravity@{index:012x}"),
-                    "name": format!("antigravity · a***@example.com"),
+                    "name": "antigravity · a***@example.com",
                     "display_name": "Antigravity · a***@example.com",
                     "status": "ready",
                     "sections": [{
