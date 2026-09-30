@@ -375,6 +375,27 @@ function barChips(entries, selected, showAll, showValue, showProvider, loading, 
   return chips
 }
 
+// The bar presses a slot's widget by geometry: it maps the point into every
+// registered click target and takes the newest one whose rect contains it,
+// falling back to the slot's button. A chip that registered only its glyph left
+// the button to swallow the rest of the slot, so a press aimed at a chip above,
+// below or beside it toggled whichever entry was already selected. Each chip
+// therefore registers its whole column of the slot, and the gaps between chips
+// split at their midpoint: the first and last chips own half of the gap beside
+// them, a middle chip a whole one. The outer columns also own the button's
+// padding at either end (`edge`), so the columns tile the whole widget and its
+// width stays exactly what the plain spacing and padding produced.
+function chipHitGaps(index, count, gap, edge) {
+  var half = (Number(gap) || 0) / 2
+  var outer = Number(edge) || 0
+  var chips = Number(count) || 0
+  var position = Number(index) || 0
+  return {
+    left: position === 0 ? outer : half,
+    right: position >= chips - 1 ? outer : half
+  }
+}
+
 // Which usage window the top bar shows. "auto" keeps the historical
 // highest-percent metric; the rest pin one window class across vendors.
 // Unknown, empty, and legacy values fall back to "auto" so an existing

@@ -94,6 +94,16 @@ Each release is also published at
   ("AI Usage vX.Y.Z is ready to install.") until it is done, and a failure
   still explains itself there.
 - **The Omarchy palette is read from where Omarchy applies it.** `omarchy-theme-set` writes the active theme to `~/.local/state/omarchy/current/theme`, while the TUI and the widget looked in `~/.config/omarchy/current/theme`, a layout Omarchy no longer populates. The lookup came up empty, the One Dark fallback was silent, and every themed surface stayed One Dark — the older path is now the fallback rather than the only candidate. Theme files that name their colors (`red`, `green`, `yellow`) are also read: only the pre-Omarchy-4 `color1`-`color3` aliases were parsed, so a current theme file would have overridden the foreground and background but left every severity color at One Dark.
+- **The Omarchy bar's chips answer a click anywhere in their column.** The bar
+  presses a slot's widget by geometry, so a chip only won a press inside its own
+  rect: the glyph sat 12 px tall in a 26 px slot, and a press on the padding
+  above or below it fell through to the button, which toggled whichever entry was
+  already selected instead. Each chip now registers its whole column of the slot
+  — the full height, half of every gap beside it, split at the midpoint with its
+  neighbour, and the button's padding at either end of the widget — so the row
+  is a partition of the slot rather than glyphs
+  floating in a button. The row's width and each chip's place in it are
+  unchanged.
 
 ## [1.28.0] — 2026-09-29
 

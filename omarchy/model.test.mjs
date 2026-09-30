@@ -60,6 +60,16 @@ assert.match(barWidgetSource, /function\s+chipItems\s*\(/);
 assert.match(barWidgetSource, /function\s+syncChipTargets\s*\(/);
 assert.match(barWidgetSource, /onModelChanged:\s*Qt\.callLater\(root\.syncChipTargets\)/);
 assert.match(barWidgetSource, /if\s*\(chips\.length\s*<=\s*1\)\s*return/);
+// The registered target is the chip's whole column of the slot: the bar
+// hit-tests it by rect, so the glyph-height delegate alone left the padding
+// above and below it to the button as well as the gaps beside it.
+assert.match(barWidgetSource, /Model\.chipHitGaps\(index,\s*chipRepeater\.count,\s*Style\.space\(10\),\s*Style\.spaceReal\(17\)\s*\/\s*2\)/);
+// The button's edge padding lives in the outer columns, so it must not be
+// added to the widget's width a second time.
+assert.match(barWidgetSource, /fixedWidth:\s*root\.bar\s*&&\s*root\.bar\.vertical\s*\?\s*-1\s*:\s*chipRow\.implicitWidth\n/);
+assert.match(barWidgetSource, /height:\s*button\.height/);
+assert.match(barWidgetSource, /width:\s*chipContent\.implicitWidth\s*\+\s*hitGaps\.left\s*\+\s*hitGaps\.right/);
+assert.match(barWidgetSource, /x:\s*chipHit\.hitGaps\.left/);
 assert.match(barWidgetSource, /function\s+triggerPress\s*\(buttonCode\)/);
 assert.match(barWidgetSource, /root\.panelItem\.openEntry\(modelData\.id\s*\|\|\s*""\)/);
 assert.doesNotMatch(barWidgetSource, /\bIpcHandler\s*\{/);
@@ -389,6 +399,33 @@ assert.equal(one[0].brand, 'openai.svg');
 // placeholders for a lone, vertical or empty bar have none to offer.
 assert.equal(strip.map(chip => chip.id).join(','), 'anthropic@work,openai');
 assert.equal(one[0].id, 'openai');
+// The bar resolves a slot press against each registered target's own rect, so a
+// chip's target is its whole column of the slot: the padding above and below
+// the glyph, and half of every gap beside it. Before this, a press on that
+// padding fell through to the button and toggled the entry already selected.
+// The pair is copied out of the vm realm, whose objects fail a strict compare.
+// The outer columns also own the button's edge padding: before, the first and
+// last chips stopped at their glyph and a press at either end of the widget
+// reached the button.
+const chipGaps = (index, count) => {
+  const value = model.chipHitGaps(index, count, 10, 8.5);
+  return {left: value.left, right: value.right};
+};
+assert.deepEqual(chipGaps(0, 3), {left: 8.5, right: 5});
+assert.deepEqual(chipGaps(1, 3), {left: 5, right: 5});
+assert.deepEqual(chipGaps(2, 3), {left: 5, right: 8.5});
+assert.deepEqual(chipGaps(0, 2), {left: 8.5, right: 5});
+assert.deepEqual(chipGaps(1, 2), {left: 5, right: 8.5});
+// A lone chip is not a target, but it still carries the edge padding the
+// button's width no longer adds.
+assert.deepEqual(chipGaps(0, 1), {left: 8.5, right: 8.5});
+// Two half-gaps replace each plain spacing and the edges move inside the outer
+// columns, so the columns add up to the widget's old padded width.
+assert.equal([0, 1, 2].map(index => {
+  const gaps = chipGaps(index, 3);
+  return 40 + gaps.left + gaps.right;
+}).reduce((sum, width) => sum + width, 0), 3 * 40 + 2 * 10 + 17);
+assert.equal(40 + chipGaps(0, 1).left + chipGaps(0, 1).right, 40 + 17);
 assert.equal(model.barChips([], null, false, true, false, false, true, false)[0].id, undefined);
 assert.equal(model.barChips([], null, false, true, false, false, true, true)[0].id, undefined);
 assert.equal(model.barStrip([claudeChip, openaiChip], false, false, true, false, false), '󰚩  29%  󱢆  95%');
