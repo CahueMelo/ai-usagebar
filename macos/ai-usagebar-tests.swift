@@ -326,7 +326,7 @@ func testParserBalances() {
     assertEqual(zai?.secondaryWeekly?.pct, 7, "zai MCP pct")
     assertEqual(zai?.secondaryWeekly?.reset, "24d 13h", "zai MCP reset")
     assertEqual(zai?.secondaryWeekly?.elapsed, 60, "zai MCP elapsed drives the pace marker")
-    assertEqual(zai?.secondaryWeeklyLabel, "MCP tools (monthly)", "zai MCP label")
+    assertEqual(zai?.secondaryWeeklyLabel, "MCP tools", "zai MCP label")
     assertNil(zai?.extra, "zai MCP window is not a spend bar")
 
     // `{zai_mcp_pct}` flattens an account with no MCP quota to "0", so the row

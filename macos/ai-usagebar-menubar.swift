@@ -695,7 +695,7 @@ func parse(_ text: String, vendor: String) -> Snapshot? {
         // presence signal — an account with no MCP quota reports "—" there and
         // must not grow a phantom 0% row.
         secondaryWeekly = mcp
-        secondaryWeeklyLabel = "MCP tools (monthly)"
+        secondaryWeeklyLabel = "MCP tools"
     } else if vendor == "minimax", isReported(t(45)), let vw = quotaWindow(44, 45, 46) {
         secondaryWeekly = vw
         secondaryWeeklyLabel = "Video Weekly"

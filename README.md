@@ -291,7 +291,7 @@ come from environment variables or `config.toml`.
 | SuperGrok | Existing `grok login` (its `auth.json` key, or its ACP extension) | Opt in, install Grok Build, and run `grok login`. This reports subscription usage — overall included credits plus per-product slices (Build, Chat, Imagine) — not the Management API balance. |
 | Grok Bot | Existing Grok Bot desktop sign-in (Linux and macOS) | Opt in, install the Grok Bot desktop app, and sign in to it once. This reports the app's weekly included-usage pool — not the Management API balance, and not the Grok Build subscription. Refreshed tokens stay in ai-usagebar's cache; the app's own file is never written. |
 | MiniMax | Token Plan subscription key | Opt in with `MINIMAX_API_KEY` or config. Choose the matching global or China region; pay-as-you-go keys do not work. |
-| Google Antigravity | Local Antigravity server, or the saved Google session | Opt in. The desktop products provide quota through their local server. The `agy` CLI currently requires a CSRF token it does not publish, so ai-usagebar uses the Google OAuth session saved in the OS keyring or `~/.gemini/antigravity-cli/antigravity-oauth-token` and asks the Cloud Code API instead. The TUI labels this fallback `Google API`. The same fallback applies when no product is running. |
+| Google Antigravity | Local Antigravity server, saved Google session, or `agy` status line | Opt in. The desktop products provide quota through their local server. The `agy` CLI can provide its live session quotas through the macOS status-line integration (see [Multiple Antigravity CLI accounts](#multiple-antigravity-cli-accounts-macos)); the existing saved-session Cloud Code API fallback remains available and is labelled `Google API` in the TUI. |
 | Cursor | Existing Cursor IDE or `cursor-agent` login | Opt in and sign in once. `cursor-agent` is the headless fallback. |
 | Kiro CLI | Existing kiro-cli login | Opt in and run `kiro-cli login` once. ai-usagebar refreshes the session when needed. |
 | Nous Research | OAuth device flow | Enable `[nous]`, click **Log in with Nous Research** in the Omarchy settings panel, or run `ai-usagebar auth nous login`. Credentials are kept in ai-usagebar's separate platform config directory (`~/.config/ai-usagebar/credentials.json` on Linux). |
@@ -986,6 +986,36 @@ Claude Desktop or CLI login. The dedicated
 - safe credential and cache isolation;
 - Waybar modules for personal and work subscriptions;
 - macOS Desktop and CLI switching, backups, and history conflicts.
+
+### Multiple Antigravity CLI accounts (macOS)
+
+If you keep separate `agy` terminal sessions signed into different Google
+accounts, install the official status-line integration once:
+
+```bash
+ai-usagebar antigravity setup-statusline
+```
+
+Restart existing `agy` terminals or run `/statusline` in them to reload the
+configuration. The popover and `ai-usagebar usage --json` then show one entry
+per distinct account with a live `agy` process; multiple terminals for the same
+account are deduplicated, and the number of entries follows the active
+accounts. Names use a masked address such as `j***@gmail.com`.
+Public account IDs are opaque and stable on this Mac; sessions remain listed
+while `agy` is running, with snapshots marked stale after 15 minutes without a
+new status-line payload.
+
+This integration reads only the CLI's status-line payload. It does not read,
+copy, or store OAuth tokens, prompts, project paths, or transcripts. When no
+valid `agy` status-line snapshot is available, the existing single-account
+Antigravity collector remains the fallback. To remove only AI UsageBar's own
+status line while preserving other Antigravity settings, run:
+
+```bash
+ai-usagebar antigravity remove-statusline
+```
+
+This multi-account integration is currently macOS-only.
 
 ### Multiple OpenRouter accounts
 

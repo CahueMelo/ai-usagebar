@@ -79,7 +79,9 @@
 # Quota-threshold desktop notifications, fired after a fresh fetch when a
 # window crosses the threshold (Linux notify-send or macOS Notification Center;
 # Windows delivery follows). One notification per crossing: a window re-arms only when
-# usage drops 7 points below the threshold or the window's reset moves later.
+# usage drops 7 points below the threshold or the window's reset moves later by
+# more than an hour and a half — a smaller move is the same window reported
+# again, with the sub-second drift the vendors' reset instants carry.
 # Banked reset credits (Codex, SuperGrok) also notify 48h before they expire.
 # [notifications]
 # enabled = true    # false turns every quota/expiry notification off

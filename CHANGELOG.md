@@ -22,6 +22,13 @@ Each release is also published at
   billing checklist and current-month usage endpoints, convert usage cents to
   dollars, and show prepaid balance, monthly spend, optional limit, and period.
 - **The Omarchy bar's per-provider chips open that provider.** With **Show all providers** on, a left-click on a chip selects the entry that chip stands for and opens the panel there, the way the panel's own provider buttons do, instead of toggling the panel on whatever was selected last. Clicking the chip the panel already shows closes it; right-click and middle-click keep their panel-wide meaning, and hovering a chip still shows the button tooltip.
+- **Multiple Antigravity CLI accounts on macOS.** The optional `agy` status-line
+  integration adds one live usage entry per distinct active Google account,
+  deduplicates repeated sessions, and displays only a masked email with an
+  opaque stable account ID. Active sessions are marked stale after 15 minutes
+  without a new status-line payload. It does not read or store OAuth tokens and
+  falls back to the existing Antigravity collector when no valid status-line
+  session is active.
 
 ### Changed
 - **The meter colour and the flame follow the pace line, with a tolerance.**
@@ -39,6 +46,9 @@ Each release is also published at
   in Left and Used mode, in the tray popover and in the Linux Mint tray.
 
 ### Fixed
+- **The macOS Z.AI row says “MCP tools” without the monthly suffix.**
+  The suffix made the row wider than the other usage rows, while the reset
+  countdown already shows the length of the quota window.
 - **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
   Terminal output from `account add`, `account switch`, and `account merge-history`
   previously interpolated raw `.display()` paths and unsanitized labels directly
@@ -104,6 +114,16 @@ Each release is also published at
   is a partition of the slot rather than glyphs
   floating in a button. The row's width and each chip's place in it are
   unchanged.
+
+- **A quota notification no longer repeats while nothing changes.** The dedupe
+  recorded each window's reset instant and re-armed the key whenever a later
+  fetch reported a later one. Vendors report that instant with sub-second
+  precision that drifts between fetches — Anthropic's five-hour window came back
+  0.70s apart on two fetches four minutes apart — so a window sitting above the
+  threshold re-notified on a good share of refreshes. A move now has to clear an
+  hour and a half: longer than any refresh interval this ships with, and far
+  shorter than the shortest window, so a window that really rolled over still
+  notifies.
 
 ## [1.28.0] — 2026-09-29
 

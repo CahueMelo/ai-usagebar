@@ -68,6 +68,48 @@ struct Entry {
     reset_credits: Option<crate::usage::ResetCredits>,
 }
 
+#[derive(Debug, Clone)]
+enum ReportTarget {
+    Tab(TabId),
+    AntigravityAccount(TabId, Box<crate::antigravity::statusline::AccountSession>),
+}
+
+fn report_target_id(target: &ReportTarget) -> String {
+    match target {
+        ReportTarget::Tab(tab) => tab_id(tab),
+        ReportTarget::AntigravityAccount(_, account) => {
+            format!("antigravity@{}", account.id_suffix)
+        }
+    }
+}
+
+fn expand_antigravity_tabs(
+    tabs: &[TabId],
+    accounts: &[crate::antigravity::statusline::AccountSession],
+) -> Vec<ReportTarget> {
+    let mut targets = Vec::new();
+    for tab in tabs {
+        if tab.vendor_id() == Some(crate::vendor::VendorId::Antigravity) && !accounts.is_empty() {
+            targets.extend(
+                accounts.iter().cloned().map(|account| {
+                    ReportTarget::AntigravityAccount(tab.clone(), Box::new(account))
+                }),
+            );
+        } else {
+            targets.push(ReportTarget::Tab(tab.clone()));
+        }
+    }
+    targets
+}
+
+fn report_targets_matching(targets: &[ReportTarget], entry_id: &str) -> Vec<ReportTarget> {
+    targets
+        .iter()
+        .filter(|target| report_target_id(target) == entry_id)
+        .cloned()
+        .collect()
+}
+
 /// Lossless machine-readable projection of a TUI panel row. `metrics` remains
 /// available in JSON as a convenience view over only the gauge rows; callers
 /// that need every reported value should consume this ordered list.
@@ -156,17 +198,27 @@ pub async fn collect_json() -> std::result::Result<String, String> {
 pub async fn collect_entry_json(entry_id: &str) -> std::result::Result<String, String> {
     let config = Config::load().map_err(|error| error.user_message())?;
     let client = crate::widget::run::http_client().map_err(|error| error.user_message())?;
-    let tabs = tabs_matching(&tabs_with_desktop(&config), entry_id);
-    if tabs.is_empty() {
+    let tabs = tabs_with_desktop(&config);
+    let accounts = if tabs
+        .iter()
+        .any(|tab| tab.vendor_id() == Some(crate::vendor::VendorId::Antigravity))
+    {
+        crate::antigravity::statusline::active_accounts().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let targets = report_targets_matching(&expand_antigravity_tabs(&tabs, &accounts), entry_id);
+    if targets.is_empty() {
         return Err(format!("no enabled provider matches {entry_id}"));
     }
-    let entries = collect_entries_for(&client, &config, &tabs).await;
+    let entries = collect_report_targets_for(&client, &config, &targets).await;
     Ok(render_json_entries(&entries))
 }
 
 /// The tabs whose report entry would carry `entry_id` — at most one, since
 /// [`tab_id`] is unique across a tab list, but kept as a slice so the caller
 /// runs the same loop as the full report.
+#[cfg(test)]
 fn tabs_matching(tabs: &[TabId], entry_id: &str) -> Vec<TabId> {
     tabs.iter()
         .filter(|tab| tab_id(tab) == entry_id)
@@ -193,18 +245,48 @@ async fn collect_entries_for(
     config: &Config,
     tabs: &[TabId],
 ) -> Vec<Entry> {
+    let accounts = if tabs
+        .iter()
+        .any(|tab| tab.vendor_id() == Some(crate::vendor::VendorId::Antigravity))
+    {
+        crate::antigravity::statusline::active_accounts().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let targets = expand_antigravity_tabs(tabs, &accounts);
+    collect_report_targets_for(client, config, &targets).await
+}
+
+async fn collect_report_targets_for(
+    client: &reqwest::Client,
+    config: &Config,
+    targets: &[ReportTarget],
+) -> Vec<Entry> {
     // Sequential on purpose: several of these share a per-vendor cache lock,
     // and firing every account at Anthropic at once is a good way to get
     // rate-limited for no gain on a handful of entries.
-    let mut entries = Vec::with_capacity(tabs.len());
-    for tab in tabs {
-        entries.push(entry_for(client, config, tab).await);
+    let mut entries = Vec::with_capacity(targets.len());
+    for target in targets {
+        entries.push(entry_for_report_target(client, config, target).await);
     }
     // #255: the opt-in context monitor's sessions ride on the Claude entry,
     // best-effort — a missing transcript root or unreadable tail adds nothing
     // rather than failing the report.
     attach_context_sessions(config, &mut entries).await;
     entries
+}
+
+async fn entry_for_report_target(
+    client: &reqwest::Client,
+    config: &Config,
+    target: &ReportTarget,
+) -> Entry {
+    match target {
+        ReportTarget::Tab(tab) => entry_for(client, config, tab).await,
+        ReportTarget::AntigravityAccount(tab, account) => {
+            entry_from_antigravity_account(tab, account, Utc::now())
+        }
+    }
 }
 
 pub async fn run(json: bool) -> i32 {
@@ -346,6 +428,26 @@ fn entry_from_state(tab: &TabId, state: &TabState, now: chrono::DateTime<Utc>) -
             Section::Spacer => entry.sections.push(ReportSection::Spacer),
         }
     }
+    entry
+}
+
+fn entry_from_antigravity_account(
+    tab: &TabId,
+    account: &crate::antigravity::statusline::AccountSession,
+    now: DateTime<Utc>,
+) -> Entry {
+    let state = TabState::Ready(Box::new(crate::tui::app::ReadyTab {
+        snapshot: crate::usage::VendorSnapshot::Antigravity(account.snapshot.clone()),
+        stale: now.signed_duration_since(account.updated_at)
+            > crate::antigravity::statusline::STALE_AFTER,
+        last_error: None,
+        fetched_at: Some(account.updated_at),
+        display: crate::balance::DisplayPrefs::default(),
+    }));
+    let mut entry = entry_from_state(tab, &state, now);
+    entry.id = format!("antigravity@{}", account.id_suffix);
+    entry.name = format!("antigravity · {}", account.masked_email);
+    entry.display_name = format!("Antigravity · {}", account.masked_email);
     entry
 }
 
@@ -811,6 +913,135 @@ mod tests {
             window_secs: None,
             group: None,
         }
+    }
+
+    fn antigravity_account(index: usize) -> crate::antigravity::statusline::AccountSession {
+        let hash = format!("{:012x}{:052x}", index + 1, index + 1);
+        crate::antigravity::statusline::AccountSession {
+            id_suffix: hash[..12].into(),
+            masked_email: "a***@example.com".to_string(),
+            updated_at: Utc::now(),
+            snapshot: crate::usage::AntigravitySnapshot {
+                plan: "Pro".into(),
+                account: hash,
+                source: crate::usage::AntigravitySource::Statusline,
+                session: None,
+                weekly: None,
+                third_party_session: None,
+                third_party_weekly: None,
+            },
+        }
+    }
+
+    #[test]
+    fn keeps_single_default_target_without_active_accounts() {
+        let tabs = [TabId::vendor(VendorId::Antigravity)];
+        let targets = expand_antigravity_tabs(&tabs, &[]);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(report_target_id(&targets[0]), "antigravity");
+    }
+
+    #[test]
+    fn replaces_default_target_with_two_three_and_five_accounts() {
+        let tabs = [TabId::vendor(VendorId::Antigravity)];
+        for count in [2, 3, 5] {
+            let accounts = (0..count).map(antigravity_account).collect::<Vec<_>>();
+            let targets = expand_antigravity_tabs(&tabs, &accounts);
+            assert_eq!(targets.len(), count);
+            assert!(
+                targets
+                    .iter()
+                    .all(|target| report_target_id(target).starts_with("antigravity@"))
+            );
+        }
+    }
+
+    #[test]
+    fn does_not_expand_when_antigravity_is_disabled() {
+        let tabs = [TabId::vendor(VendorId::Anthropic)];
+        let targets =
+            expand_antigravity_tabs(&tabs, &[antigravity_account(0), antigravity_account(1)]);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(report_target_id(&targets[0]), "anthropic");
+    }
+
+    #[test]
+    fn named_target_uses_masked_display_name_and_hashed_id() {
+        let tab = TabId::vendor(VendorId::Antigravity);
+        let target = expand_antigravity_tabs(&[tab], &[antigravity_account(0)]).remove(0);
+        let ReportTarget::AntigravityAccount(tab, account) = &target else {
+            panic!("expected named Antigravity account target");
+        };
+        let entry = entry_from_antigravity_account(tab, account, Utc::now());
+        assert_eq!(entry.id, report_target_id(&target));
+        assert!(entry.id.starts_with("antigravity@"));
+        assert_eq!(entry.display_name, "Antigravity · a***@example.com");
+        assert_eq!(entry.fetched_at, Some(account.updated_at));
+        assert!(!entry.display_name.contains("account0"));
+    }
+
+    #[test]
+    fn usage_json_contains_one_entry_per_distinct_active_account() {
+        let tabs = [TabId::vendor(VendorId::Antigravity)];
+        let accounts = (0..3).map(antigravity_account).collect::<Vec<_>>();
+        let targets = expand_antigravity_tabs(&tabs, &accounts);
+        let entries = targets
+            .iter()
+            .map(|target| {
+                let ReportTarget::AntigravityAccount(tab, account) = target else {
+                    panic!("expected named account target");
+                };
+                entry_from_antigravity_account(tab, account, Utc::now())
+            })
+            .collect::<Vec<_>>();
+        let value: serde_json::Value =
+            serde_json::from_str(&render_json_entries(&entries)).unwrap();
+        assert_eq!(value["entries"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn usage_json_marks_old_but_active_antigravity_snapshot_stale() {
+        let tab = TabId::vendor(VendorId::Antigravity);
+        let mut account = antigravity_account(0);
+        account.updated_at = Utc::now() - chrono::Duration::minutes(16);
+        let entry = entry_from_antigravity_account(&tab, &account, Utc::now());
+        let value: serde_json::Value =
+            serde_json::from_str(&render_json_entries(&[entry])).unwrap();
+
+        assert_eq!(value["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(value["entries"][0]["stale"], true);
+    }
+
+    #[test]
+    fn usage_json_never_contains_raw_email() {
+        let tab = TabId::vendor(VendorId::Antigravity);
+        let ReportTarget::AntigravityAccount(tab, account) =
+            expand_antigravity_tabs(&[tab], &[antigravity_account(0)]).remove(0)
+        else {
+            panic!("expected named account target");
+        };
+        let entry = entry_from_antigravity_account(&tab, &account, Utc::now());
+        let json = render_json_entries(&[entry]);
+        assert!(!json.contains("account0@example.com"));
+        assert!(json.contains("a***@example.com"));
+    }
+
+    #[test]
+    fn collect_entry_json_resolves_statusline_account() {
+        let tab = TabId::vendor(VendorId::Antigravity);
+        let targets =
+            expand_antigravity_tabs(&[tab], &[antigravity_account(0), antigravity_account(1)]);
+        let id = report_target_id(&targets[1]);
+        let matching = report_targets_matching(&targets, &id);
+        assert_eq!(matching.len(), 1);
+        assert_eq!(report_target_id(&matching[0]), id);
+    }
+
+    #[test]
+    fn zero_valid_snapshots_runs_existing_antigravity_fallback() {
+        let tabs = [TabId::vendor(VendorId::Antigravity)];
+        let targets = expand_antigravity_tabs(&tabs, &[]);
+        assert!(matches!(targets.as_slice(), [ReportTarget::Tab(_)]));
     }
 
     #[test]

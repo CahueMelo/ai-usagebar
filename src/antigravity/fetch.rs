@@ -3492,6 +3492,13 @@ mod tests {
             AntigravitySource::Remote
         );
 
+        snap.source = AntigravitySource::Statusline;
+        let bytes = serde_json::to_vec(&snap_to_json(&snap)).unwrap();
+        assert_eq!(
+            parse_cache_at(&bytes, None, now()).unwrap().source,
+            AntigravitySource::Statusline
+        );
+
         // A payload from before the field existed is a local one.
         let mut legacy = snap_to_json(&snap);
         legacy.as_object_mut().unwrap().remove("source");

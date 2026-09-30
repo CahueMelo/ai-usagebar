@@ -67,6 +67,7 @@ dependencies = [
  "directories",
  "fs2",
  "global-hotkey",
+ "hmac",
  "insta",
  "mockito",
  "objc2",
