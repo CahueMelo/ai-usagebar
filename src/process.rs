@@ -18,6 +18,7 @@ mod tests {
     #[test]
     fn report_time_child_processes_never_open_a_console_window() {
         for file in [
+            "src/antigravity/agy.rs",
             "src/supergrok/acp.rs",
             "src/copilot/credentials.rs",
             "src/tray/scoop.rs",

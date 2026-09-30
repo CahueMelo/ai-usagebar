@@ -221,6 +221,33 @@ impl Default for DeepseekSnapshot {
     }
 }
 
+/// DeepInfra prepaid balance and current-month usage from the documented
+/// `/payment/checklist` and `/payment/usage` billing endpoints.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeepInfraSnapshot {
+    /// General-purpose prepaid credit remaining, in US dollars.
+    pub balance: f64,
+    /// Current calendar-month spend, in US dollars.
+    pub monthly_spend: f64,
+    /// Optional monthly spending limit, in US dollars.
+    pub monthly_limit: Option<f64>,
+    /// Usage period in the API's `YYYY.MM` form.
+    pub period: String,
+}
+
+impl Eq for DeepInfraSnapshot {}
+
+impl DeepInfraSnapshot {
+    pub fn monthly_consumed_pct(&self) -> Option<i32> {
+        let limit = self.monthly_limit.filter(|limit| *limit > 0.0)?;
+        Some(
+            ((self.monthly_spend / limit) * 100.0)
+                .round()
+                .clamp(0.0, 9999.0) as i32,
+        )
+    }
+}
+
 /// Cursor — the two included-usage pools the dashboard shows, from the
 /// undocumented `cursor.com/api/usage-summary` endpoint (the same one the
 /// dashboard's own frontend calls), authenticated with the session token the
@@ -392,6 +419,7 @@ pub enum VendorSnapshot {
     Zai(ZaiSnapshot),
     Openrouter(OpenRouterSnapshot),
     Deepseek(DeepseekSnapshot),
+    Deepinfra(DeepInfraSnapshot),
     Kimi(KimiSnapshot),
     Kilo(KiloSnapshot),
     Novita(NovitaSnapshot),

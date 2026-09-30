@@ -152,6 +152,7 @@
 /** @typedef {{ duration: NonNullable<unknown> }} Pace_Shows_After_FirstInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_LeftInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Left_At_ResetInputs */
+/** @typedef {{ percent: NonNullable<unknown> }} Percent_Over_PaceInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_SpareInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_UsedInputs */
 /** @typedef {{}} Popover_StyleInputs */
@@ -863,6 +864,10 @@ export const percent_left = /** @type {(inputs: Percent_LeftInputs) => Localized
 
 export const percent_left_at_reset = /** @type {(inputs: Percent_Left_At_ResetInputs) => LocalizedString} */ (i) => {
 	return /** @type {LocalizedString} */ (`~${i?.percent}% left at reset`)
+};
+
+export const percent_over_pace = /** @type {(inputs: Percent_Over_PaceInputs) => LocalizedString} */ (i) => {
+	return /** @type {LocalizedString} */ (`~${i?.percent}% over pace`)
 };
 
 export const percent_spare = /** @type {(inputs: Percent_SpareInputs) => LocalizedString} */ (i) => {

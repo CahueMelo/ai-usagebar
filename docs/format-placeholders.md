@@ -12,6 +12,7 @@ metrics expand to an empty string unless noted otherwise.
 | Claude | `cld` | Codex | `gpt` |
 | GitHub Copilot | `ghc` | Z.AI | `zai` |
 | OpenRouter | `opr` | DeepSeek | `dsk` |
+| DeepInfra | `dif` | | |
 | Kimi | `kmi` | Kilo | `klo` |
 | Novita | `nvt` | Moonshot | `msh` |
 | Grok | `grk` | SuperGrok | `sgk` |
@@ -192,6 +193,16 @@ down to the key's `access_until`, or `—` when it has no expiry.
 
 These report the `/user/balance` credit balance. USD is preferred when both
 currencies are present; otherwise they use CNY.
+
+## DeepInfra
+
+`{dif_balance}`, `{dif_used_month}`, `{dif_limit}`, `{dif_period}`,
+`{dif_consumed_pct}`
+
+`{dif_balance}` is the general prepaid balance after recent uninvoiced usage.
+`{dif_used_month}` converts `/payment/usage`'s cent-denominated `total_cost` to
+US dollars. `{dif_limit}` is the monthly spending limit or `no limit`, and
+`{dif_consumed_pct}` renders `—` when the account has no monthly limit.
 
 ## Kimi
 
