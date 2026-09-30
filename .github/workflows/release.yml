@@ -597,8 +597,8 @@ jobs:
 
           X86_SHA=$(awk '{print $1}' artifacts/ai-usagebar-linux-x86_64.tar.gz.sha256)
           ARM_SHA=$(awk '{print $1}' artifacts/ai-usagebar-linux-aarch64.tar.gz.sha256)
-          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$X86_SHA')/" packaging/aur/PKGBUILD-bin
-          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('$ARM_SHA')/" packaging/aur/PKGBUILD-bin
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$X86_SHA' 'SKIP')/" packaging/aur/PKGBUILD-bin
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('$ARM_SHA' 'SKIP')/" packaging/aur/PKGBUILD-bin
 
           # deploy-aur copies pkgbuild verbatim (preserves filename). The AUR
           # bin repo tracks a file literally named `PKGBUILD`, so stage the

@@ -780,6 +780,13 @@ mod tests {
         app
     }
 
+    fn vendor_index(vendor: ai_usagebar::vendor::VendorId) -> usize {
+        ai_usagebar::vendor::VendorId::all()
+            .iter()
+            .position(|id| *id == vendor)
+            .expect("vendor is present in VendorId::all()")
+    }
+
     /// Screen rows (buffer y) where `needle` renders as a provider switch
     /// row: the label padded to the row's fixed width plus an on/off value,
     /// which API-key rows and other vendor names never match.
@@ -816,13 +823,14 @@ mod tests {
     fn clicking_a_provider_selects_the_row_the_user_sees_while_scrolled() {
         use ai_usagebar::tui::settings::Focus as SFocus;
         use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        // Moonshot sits mid-provider-list (index 10); on a short terminal the
+        // Moonshot sits mid-provider-list; on a short terminal the
         // overlay body scrolls to follow the focused switch, which is where
         // unscrolled hit rects made neighbor clicks land on the wrong row.
-        let moon = 10;
+        let moon = vendor_index(VendorId::Moonshot);
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -848,10 +856,18 @@ mod tests {
             terminal.draw(|f| draw_view(f, app)).unwrap();
         };
 
-        // One visible row above Moonshot: Novita.
-        assert_click_selects(&mut app, &mut terminal, "Novita", moon - 1);
-        // Two rows above while scrolled: Kilo.
-        assert_click_selects(&mut app, &mut terminal, "Kilo", moon - 2);
+        assert_click_selects(
+            &mut app,
+            &mut terminal,
+            "Novita",
+            vendor_index(VendorId::Novita),
+        );
+        assert_click_selects(
+            &mut app,
+            &mut terminal,
+            "Kilo",
+            vendor_index(VendorId::Kilo),
+        );
         // Clicking Moonshot's own row keeps it focused.
         assert_click_selects(&mut app, &mut terminal, "Moonshot", moon);
     }
@@ -860,10 +876,11 @@ mod tests {
     fn clicking_a_provider_selects_the_row_when_the_body_fits() {
         use ai_usagebar::tui::settings::Focus as SFocus;
         use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let moon = 10;
+        let moon = vendor_index(VendorId::Moonshot);
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -871,10 +888,10 @@ mod tests {
 
         // Neighbor rows on both sides, with everything unscrolled.
         for (label, expected) in [
-            ("Novita", moon - 1),
+            ("Novita", vendor_index(VendorId::Novita)),
             ("Moonshot", moon),
-            ("Grok", moon + 1),
-            ("SuperGrok", moon + 2),
+            ("Grok", vendor_index(VendorId::Grok)),
+            ("SuperGrok", vendor_index(VendorId::Supergrok)),
         ] {
             let rows = provider_row_positions(&terminal, label);
             assert_eq!(rows.len(), 1, "{label} must render exactly once");
@@ -913,11 +930,12 @@ mod tests {
     fn clicking_the_settings_hint_close_link_closes_the_overlay() {
         use ai_usagebar::tui::settings::Action as SAction;
         use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
         use ratatui::crossterm::event::KeyCode;
 
-        let mut app = settings_focused_on_provider(10);
+        let mut app = settings_focused_on_provider(vendor_index(VendorId::Moonshot));
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
 
@@ -932,11 +950,12 @@ mod tests {
     #[test]
     fn clicking_the_settings_hint_toggle_link_toggles_the_focused_provider() {
         use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
         use ratatui::crossterm::event::KeyCode;
 
-        let moon = 10;
+        let moon = vendor_index(VendorId::Moonshot);
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -967,10 +986,12 @@ mod tests {
     fn clicking_a_provider_switch_cell_toggles_it_without_losing_the_click() {
         use ai_usagebar::tui::settings::{Focus as SFocus, SettingsRow};
         use ai_usagebar::tui::view::draw as draw_view;
+        use ai_usagebar::vendor::VendorId;
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let moon = 10;
+        let moon = vendor_index(VendorId::Moonshot);
+        let novita = vendor_index(VendorId::Novita);
         let mut app = settings_focused_on_provider(moon);
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -982,26 +1003,26 @@ mod tests {
             .settings_rows
             .iter()
             .find_map(|(row, rect)| match row {
-                SettingsRow::Focus(SFocus::Vendor(v)) if *v == moon - 1 => Some(*rect),
+                SettingsRow::Focus(SFocus::Vendor(v)) if *v == novita => Some(*rect),
                 _ => None,
             })
             .unwrap();
         let _ = handle_mouse(&mut app, &click_at(focus_rect.x + 4, focus_rect.y));
         let state = app.settings.as_ref().unwrap();
-        assert_eq!(state.focus, SFocus::Vendor(moon - 1));
+        assert_eq!(state.focus, SFocus::Vendor(novita));
         assert!(
-            !state.vendors[moon - 1].enabled,
+            !state.vendors[novita].enabled,
             "label click must not toggle"
         );
 
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
 
         // Clicking the on/off cell of that row toggles it in place.
-        let toggle = toggle_rect_of(&app, moon - 1);
+        let toggle = toggle_rect_of(&app, novita);
         let _ = handle_mouse(&mut app, &click_at(toggle.x + 2, toggle.y));
         let state = app.settings.as_ref().unwrap();
-        assert!(state.vendors[moon - 1].enabled, "switch click toggles");
-        assert!(state.vendors[moon - 1].dirty);
+        assert!(state.vendors[novita].enabled, "switch click toggles");
+        assert!(state.vendors[novita].dirty);
 
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
 
@@ -1024,11 +1045,9 @@ mod tests {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let copilot = VendorId::all()
-            .iter()
-            .position(|id| *id == VendorId::Copilot)
-            .expect("Copilot is a known vendor");
-        let mut app = settings_focused_on_provider(10);
+        let copilot = vendor_index(VendorId::Copilot);
+        let initial_focus = vendor_index(VendorId::Anthropic);
+        let mut app = settings_focused_on_provider(initial_focus);
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
 
@@ -1056,7 +1075,7 @@ mod tests {
         // Unfocus Copilot, then click the first empty cell immediately after
         // its unfocused `  off` segment. That cell belongs to the row focus
         // target, not the narrower switch target.
-        app.settings.as_mut().unwrap().focus = SFocus::Vendor(10);
+        app.settings.as_mut().unwrap().focus = SFocus::Vendor(initial_focus);
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
         let focus_rect = copilot_row(&app);
         let first_empty_after_value = focus_rect.x + 5 + 14 + 2 + 3;
@@ -1112,7 +1131,7 @@ mod tests {
         use ratatui::backend::TestBackend;
         use ratatui::crossterm::event::KeyCode;
 
-        let mut app = settings_focused_on_provider(10);
+        let mut app = settings_focused_on_provider(vendor_index(VendorId::Anthropic));
         app.settings.as_mut().unwrap().focus = SFocus::Primary;
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -1145,7 +1164,7 @@ mod tests {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let mut app = settings_focused_on_provider(10);
+        let mut app = settings_focused_on_provider(vendor_index(VendorId::Anthropic));
         app.settings.as_mut().unwrap().focus = SFocus::Primary;
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
         terminal.draw(|f| draw_view(f, &mut app)).unwrap();
@@ -1197,7 +1216,8 @@ mod tests {
         use ratatui::Terminal;
         use ratatui::backend::TestBackend;
 
-        let moon = 10;
+        let moon = vendor_index(VendorId::Moonshot);
+        let novita = vendor_index(VendorId::Novita);
         let mut app = settings_focused_on_provider(moon);
         app.settings.as_mut().unwrap().focus = SFocus::Primary;
         let mut terminal = Terminal::new(TestBackend::new(160, 70)).unwrap();
@@ -1223,7 +1243,7 @@ mod tests {
             .settings_rows
             .iter()
             .find_map(|(row, rect)| match row {
-                SettingsRow::Focus(SFocus::Vendor(v)) if *v == moon - 1 => Some(*rect),
+                SettingsRow::Focus(SFocus::Vendor(v)) if *v == novita => Some(*rect),
                 _ => None,
             })
             .unwrap();
