@@ -9,6 +9,8 @@ Each release is also published at
 
 ## [Unreleased]
 
+## [1.29.0] — 2026-09-30
+
 ### Added
 
 - **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
@@ -114,7 +116,6 @@ Each release is also published at
   is a partition of the slot rather than glyphs
   floating in a button. The row's width and each chip's place in it are
   unchanged.
-
 - **A quota notification no longer repeats while nothing changes.** The dedupe
   recorded each window's reset instant and re-armed the key whenever a later
   fetch reported a later one. Vendors report that instant with sub-second
@@ -3373,7 +3374,8 @@ vendors. Highlights:
 - Live API smoke test suite (`make smoke`) that exercises the real
   undocumented endpoints to detect schema drift before users do.
 
-[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.28.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-usagebar/compare/v1.29.0...HEAD
+[1.29.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/akitaonrails/ai-usagebar/compare/v1.25.0...v1.26.0

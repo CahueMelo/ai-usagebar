@@ -593,9 +593,12 @@ fn load_or_create_identity_key(root: &Path) -> Result<[u8; 32]> {
         }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let mut key = [0; 32];
-            std::fs::File::open("/dev/urandom")
-                .and_then(|mut random| random.read_exact(&mut key))
-                .map_err(|error| AppError::io_at(Path::new("/dev/urandom"), error))?;
+            // `getrandom`, not `/dev/urandom`: the device does not exist on
+            // Windows, and this module's tests compile there (`cfg(test)`),
+            // which is how the Windows CI leg went red during the v1.29.0
+            // post-audit.
+            getrandom::fill(&mut key)
+                .map_err(|error| AppError::io_at(&key_path, std::io::Error::other(error)))?;
             crate::cache::atomic_write(&key_path, &key)?;
             Ok(key)
         }

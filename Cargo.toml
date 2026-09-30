@@ -1,6 +1,6 @@
 [package]
 name = "ai-usagebar"
-version = "1.28.0"
+version = "1.29.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
@@ -84,6 +84,7 @@ ratatui-bubbletea-theme = "0.2"
 # AUR source build's hermeticity (see CLAUDE.md's release checklist).
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
 unicode-width = "0.2"
+getrandom = "0.4.3"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }
