@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
+  Following upstream release signing introduced in v1.28.0 (#257), `packaging/aur/PKGBUILD-bin`
+  and `.SRCINFO-bin` now declare maintainer key `AE42EF5D73DD92E248815C95B65CCCAF64A99438`
+  in `validpgpkeys` and fetch detached `.sig` signatures alongside each architecture's
+  binary archive (`source_x86_64` and `source_aarch64`), allowing `makepkg` to automatically
+  verify release integrity and authenticity (#282).
+
 ### Fixed
 
 - **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
