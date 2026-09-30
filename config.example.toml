@@ -58,6 +58,38 @@
 # [[custom.texts]]               # a free-text row
 # label = "Tier"
 # value = "/account/tier"        # string, number or boolean
+#
+# Recipe: Meta Muse (Muse Spark) local spend. Meta publishes no quota or
+# billing endpoint for api.meta.ai (see docs/vendor-endpoints.md), so there
+# is no native vendor — but Muse Code writes per-call token usage
+# (`model_completed` events) to ~/.local/share/muse/sessions, and a small
+# loopback server can tally it into this shape. Uncomment and point `url`
+# at your tally server:
+# [[custom]]
+# id = "muse"
+# name = "Muse"
+# short_name = "mus"             # exactly 3 lowercase letters, unique
+# enabled = true
+# url = "http://127.0.0.1:41837/usage"
+# allow_http = true              # loopback only
+# api_key_env = ""
+# api_key = "local"              # loopback only; the tally server ignores it
+# auth_header = "Authorization"
+# auth_scheme = ""               # "" sends the bare key
+# plan = "Muse Spark (local)"
+# cache_ttl_secs = 300
+# [[custom.metrics]]
+# label = "Cache miss"           # low-is-good reads correctly in severity colors
+# percent = "/cache/miss_pct"
+# [[custom.texts]]
+# label = "Today"
+# value = "/spend/today_usd"
+# [[custom.texts]]
+# label = "30 days"
+# value = "/spend/last30_usd"
+# [[custom.texts]]
+# label = "Calls today"
+# value = "/calls/today"
 
 # Windows/macOS tray. The macOS menu bar also writes its options here from the
 # popover Settings → Menu Bar.

@@ -51,6 +51,7 @@ or stored, and no vendor asks the user to paste a session cookie.
 | Provider | Status | Why |
 |---|---|---|
 | **Xiaomi MiMo** (Token Plan) | Not implementable | The quota routes (`platform.xiaomimimo.com/api/v1/tokenPlan/{usage,detail}`) authenticate with a Xiaomi Account **web SSO session**, not the plan's API key. The API key reaches only the inference gateway, which exposes no quota surface and returns no rate-limit headers. The effective session credential is an HttpOnly cookie, so there is no CLI-written file to read — only a browser profile. Waiting on Xiaomi to expose quota to API keys. (#146) |
+| **Meta Muse** (Muse Spark) | Not implementable as a native vendor | `https://api.meta.ai/v1` serves inference only: Meta publishes no usage, quota, or billing endpoint for it. The `dev.meta.ai` dashboard reads team spend through a private GraphQL route on a browser session — a browser credential, which this project never uses. The Muse Code OAuth token (macOS Keychain `ai.meta.dev.credentials`, `~/.config/muse/auth.json`) reaches the same inference gateway, so there is no quota-bearing credential to read. Workaround inside the rules: tally the per-call token usage Muse Code already writes to its local `~/.local/share/muse/sessions` logs (`model_completed` events) and serve it through a `[[custom]]` provider — see the commented `muse` recipe in `config.example.toml`. |
 
 
 ## Stability notes
