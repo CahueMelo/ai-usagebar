@@ -15,6 +15,33 @@ BarWidget {
   readonly property bool popoutSwitchClosing: panelItem
     ? panelItem.popoutSwitchClosing === true
     : false
+  // The bar presses a slot's widget with no coordinates, so the button cannot
+  // tell which chip was clicked. Each chip registers as its own click target
+  // instead, and the bar presses the one under the pointer by geometry. It
+  // scans targets last first, so the chips are re-registered behind the
+  // button's whole-slot target whenever the row or the bar changes.
+  function chipItems() {
+    var items = []
+    for (var i = 0; i < chipRepeater.count; i++) {
+      var item = chipRepeater.itemAt(i)
+      if (item) items.push(item)
+    }
+    return items
+  }
+
+  function syncChipTargets() {
+    var host = root.bar
+    if (!host || typeof host.registerClickTarget !== "function") return
+    // Anything of ours that is not the button is a chip, current or rebuilt.
+    var registered = host.clickTargets || []
+    for (var i = 0; i < registered.length; i++)
+      if (registered[i] !== button) host.unregisterClickTarget(registered[i])
+    var chips = chipItems()
+    // A lone chip, a vertical bar or an empty report keeps the button as the
+    // only target, and its press toggles the panel the way it always did.
+    if (chips.length <= 1) return
+    for (var j = 0; j < chips.length; j++) host.registerClickTarget(chips[j])
+  }
 
   function open() {
     if (panelItem) panelItem.open()
@@ -57,7 +84,13 @@ BarWidget {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  onBarChanged: injectPanel()
+  onBarChanged: {
+    injectPanel()
+    // The bar is injected after the widget completes, and the button's own
+    // registration rides the same change; re-assert the chips once both are
+    // done so the bar scans them ahead of the button.
+    Qt.callLater(root.syncChipTargets)
+  }
   onSettingsChanged: injectPanel()
 
   Loader {
@@ -102,10 +135,23 @@ BarWidget {
       visible: !(root.bar && root.bar.vertical)
 
       Repeater {
+        id: chipRepeater
         model: root.panelItem ? root.panelItem.barChips : []
+        // The model is rebuilt when the report changes, which replaces every
+        // delegate and the click targets that point at them.
+        onModelChanged: Qt.callLater(root.syncChipTargets)
 
         Row {
           spacing: Style.space(4)
+
+          // One chip per provider, and the one the pointer is on is the one
+          // the bar presses: left opens that provider's page, while the other
+          // buttons keep their panel-wide meaning.
+          function triggerPress(buttonCode) {
+            if (buttonCode === Qt.RightButton) root.launchDashboard()
+            else if (buttonCode === Qt.MiddleButton) root.nextEntry()
+            else if (root.panelItem) root.panelItem.openEntry(modelData.id || "")
+          }
 
           BrandMark {
             anchors.verticalCenter: parent.verticalCenter

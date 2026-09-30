@@ -53,6 +53,15 @@ assert.match(barWidgetSource, /source:\s*Qt\.resolvedUrl\("Panel\.qml"\)/);
 assert.match(barWidgetSource, /target\.anchorItem\s*=\s*button/);
 assert.match(barWidgetSource, /target\.hostWidget\s*=\s*root/);
 assert.match(barWidgetSource, /buttonCode\s*===\s*Qt\.RightButton\)\s*root\.launchDashboard\(\)/);
+// The bar presses a slot's widget with no coordinates, so each chip registers
+// as its own click target and the bar picks the one under the pointer; a lone
+// chip leaves the button as the only target and its press toggles as before.
+assert.match(barWidgetSource, /function\s+chipItems\s*\(/);
+assert.match(barWidgetSource, /function\s+syncChipTargets\s*\(/);
+assert.match(barWidgetSource, /onModelChanged:\s*Qt\.callLater\(root\.syncChipTargets\)/);
+assert.match(barWidgetSource, /if\s*\(chips\.length\s*<=\s*1\)\s*return/);
+assert.match(barWidgetSource, /function\s+triggerPress\s*\(buttonCode\)/);
+assert.match(barWidgetSource, /root\.panelItem\.openEntry\(modelData\.id\s*\|\|\s*""\)/);
 assert.doesNotMatch(barWidgetSource, /\bIpcHandler\s*\{/);
 
 const panelSource = fs.readFileSync(new URL('./Panel.qml', import.meta.url), 'utf8');
@@ -61,6 +70,8 @@ assert.match(panelSource, /property\s+var\s+anchorItem:\s*null/);
 assert.match(panelSource, /property\s+var\s+hostWidget:\s*null/);
 assert.match(panelSource, /SettingsView\s*\{/);
 assert.match(panelSource, /function\s+openSettings\s*\(/);
+assert.match(panelSource, /function\s+openEntry\s*\(/);
+assert.match(panelSource, /id:\s*chip\.id/);
 assert.match(panelSource, /setting\("lastSelectedEntryId",\s*""\)/);
 assert.match(panelSource, /setting\("showValue",\s*true\)/);
 assert.match(panelSource, /setting\("showProvider",\s*false\)/);
@@ -374,6 +385,12 @@ assert.equal(strip[1].label, '95%');
 const one = model.barChips([claudeChip, openaiChip], openaiChip, false, true, false, false, false, false);
 assert.equal(one.length, 1);
 assert.equal(one[0].brand, 'openai.svg');
+// Every chip names the entry behind it, in the order the bar draws them; the
+// placeholders for a lone, vertical or empty bar have none to offer.
+assert.equal(strip.map(chip => chip.id).join(','), 'anthropic@work,openai');
+assert.equal(one[0].id, 'openai');
+assert.equal(model.barChips([], null, false, true, false, false, true, false)[0].id, undefined);
+assert.equal(model.barChips([], null, false, true, false, false, true, true)[0].id, undefined);
 assert.equal(model.barStrip([claudeChip, openaiChip], false, false, true, false, false), '󰚩  29%  󱢆  95%');
 
 // The codes come from Rust's VendorId::short_name via the report; the vendor

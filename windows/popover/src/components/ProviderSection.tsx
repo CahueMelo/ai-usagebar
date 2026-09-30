@@ -41,7 +41,8 @@ import {
   meterColor,
   providerLinks,
   pace,
-  paceText,
+  paceNote,
+  paceVerdict,
   paceTickPercent,
   paceVisible,
   paceWarmupHint,
@@ -372,11 +373,12 @@ function UsageMetricRow({ demand, layout, nowMs, onToggleShowAs, row }: MetricRo
   const resetHint = resetAlternate(row, layout.resetTimes, nowMs, resetOpts);
   const rowPace = pace(row, nowMs);
   const showPace = rowPace !== null && paceVisible(rowPace, layout);
-  const paceNote = showPace && rowPace ? paceText(rowPace, nowMs, { resetTimes: layout.resetTimes, timeFormat: layout.timeFormat, locale: language }) : "";
+  const note = showPace && rowPace ? paceNote(rowPace, row.leftPercent, nowMs, { resetTimes: layout.resetTimes, timeFormat: layout.timeFormat, locale: language }) : "";
   // Too early in the window for a projection: say so instead of leaving the note empty, when
   // the layout asks for pacing on every metric.
   const warmup = rowPace === null && layout.alwaysShowPace ? paceWarmupText(row, nowMs, language) : "";
-  const behind = rowPace?.state === "behind";
+  // The flame is for a row that runs out well before its reset, not for any row a hair over the line.
+  const behind = paceVerdict(rowPace, row.leftPercent) === "critical";
   const tick = paceTickPercent(rowPace, layout.showAs);
   const goal = layout.usageGoal ? usageGoal(row, nowMs) : null;
   const goalLabel = goal ? (goal.estimated ? m.estimated_goal_now() : m.goal_now()) : "";
@@ -389,14 +391,14 @@ function UsageMetricRow({ demand, layout, nowMs, onToggleShowAs, row }: MetricRo
             <MdiFire className="size-[var(--icon-note)] text-meter-red" />
             {m.limit_reached()}
           </span>
-        ) : showPace && rowPace && (paceNote !== "" || behind) ? (
+        ) : showPace && rowPace && (note !== "" || behind) ? (
           <Hint
             align="end"
             content={m.pace_by_reset({ percent: Math.round(rowPace.projectedPercent) })}
           >
             <span className="ml-auto flex shrink-0 items-center gap-[var(--gap-inline)] text-[length:var(--sz-support)] text-label-2">
               {behind ? <MdiFire className="size-[var(--icon-note)] text-meter-red" /> : null}
-              {paceNote}
+              {note}
             </span>
           </Hint>
         ) : warmup ? (
@@ -409,7 +411,7 @@ function UsageMetricRow({ demand, layout, nowMs, onToggleShowAs, row }: MetricRo
         <div className="meter" aria-hidden="true">
           <div
             className="meter-fill"
-            data-color={meterColor(row.severity, rowPace, spent)}
+            data-color={meterColor(row.leftPercent, rowPace, spent)}
             data-empty={fill === 0 ? "true" : "false"}
             style={{ width: `${fill}%` }}
           />

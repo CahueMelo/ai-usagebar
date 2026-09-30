@@ -360,7 +360,7 @@ pub fn plan_switch(paths: &Paths, label: &str, opts: SwitchOpts) -> Result<Switc
                 "no saved Claude Desktop account {label:?} in {}; known: {known:?}. \
                  Capture one with `claude-acc add {label}` \
                  (https://github.com/ohmaseclaro/claude-acc)",
-                paths.profiles_dir.display()
+                sanitize_untrusted_path(&paths.profiles_dir)
             ))
         })?;
 
@@ -499,7 +499,7 @@ pub fn history_target(paths: &Paths) -> Result<(String, Option<String>)> {
     let account_uuid = merge::logged_in_account(&config).ok_or_else(|| {
         AppError::Credentials(format!(
             "no account is signed into {}; sign in before merging history",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         ))
     })?;
     let org_uuid = resolve_org(&paths.sessions_root(), &account_uuid, &config);
@@ -634,7 +634,7 @@ pub fn plan_history_merge(paths: &Paths) -> Result<HistoryMerge> {
     let account_uuid = merge::logged_in_account(&config).ok_or_else(|| {
         AppError::Credentials(format!(
             "no account is signed into {}; sign in before merging history",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         ))
     })?;
 
@@ -1859,29 +1859,12 @@ mod tests {
         for file in crate::guard::rs_files_in("src") {
             let source = std::fs::read_to_string(&file).expect("readable module");
             let body = crate::guard::production_code(&source);
-            let mut rest = body.as_str();
-            while let Some(at) = rest.find("notes.push(") {
-                let call = &rest[at..];
-                let mut depth = 0usize;
-                let mut end = call.len();
-                for (i, ch) in call.char_indices() {
-                    match ch {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = i;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                if call[..end].contains(".display()") {
-                    sites.push(format!("{}: {}", file.display(), &call[..end]));
-                }
-                rest = &call[end.max(1)..];
-            }
+            sites.extend(
+                crate::guard::calls(&body, "notes.push(")
+                    .into_iter()
+                    .filter(|call| call.contains(".display()"))
+                    .map(|call| format!("{}: {call}", file.display())),
+            );
         }
         assert!(
             sites.is_empty(),

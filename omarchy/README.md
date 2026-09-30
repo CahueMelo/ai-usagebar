@@ -40,7 +40,10 @@ omarchy plugin remove akitaonrails.ai-usagebar
 
 - Bar: left-click opens the native Quattro usage panel; right-click
   intentionally launches `ai-usagebar-tui` in a terminal; middle-click or the
-  mouse wheel switches provider. The exact provider or named account is saved
+  mouse wheel switches provider. With **Show all providers** on the bar draws
+  one chip per entry, and left-clicking a chip opens the panel on the entry
+  that chip stands for (clicking the chip the panel already shows closes it).
+  The exact provider or named account is saved
   in the widget's inline `shell.json` settings and restored after shell reloads
   and sleep/unlock cycles. Right-click is not the settings shortcut.
 - Panel: click the gear or press `s` to open the native QML settings page.
@@ -162,7 +165,8 @@ code — the panel and tooltip remain the place that tells `Claude · work` from
 `Claude · personal`. With both toggles on the bar reads icon + `cld 29%`; with
 `showValue` off it is the icon and `cld`. `showAll` draws every visible
 entry as its own chip with a brand SVG (see [`icons/README.md`](icons/README.md)
-for source and licence). Grok and SuperGrok share a mark; Grok Bot has its
+for source and licence) — and each chip is a target for its entry, so a
+left-click opens the panel there. Grok and SuperGrok share a mark; Grok Bot has its
 own head-and-eyes logomark. Command Code has
 none and falls back to its three-letter code. A `[[custom]]` provider can set
 `brand = "<built-in slug>"` to use one of these marks; without it, the custom

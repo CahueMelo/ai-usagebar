@@ -76,6 +76,9 @@ pub enum SavedCredential<'a> {
     Keyring,
     /// Use this raw blob.
     Blob(&'a str),
+    /// Read the blob from this file each time, so a test can model a
+    /// credential that another program rewrites between two reads.
+    File(&'a std::path::Path),
     /// Behave as if the keyring held nothing.
     Absent,
 }
@@ -95,6 +98,10 @@ pub struct RemoteOverride<'a> {
     /// `pid` marks which process owns each listener; tests that model one
     /// product's two listeners give them the same pid.
     pub local_bases: Option<Vec<Candidate>>,
+    /// How an expired session is renewed through the `agy` CLI. Off by
+    /// default, so only [`fetch_snapshot`] — which asks for discovery — ever
+    /// runs the real one.
+    pub agy: super::agy::AgyCommand,
 }
 
 /// One probe target: the listener's base URL and, when it came from
@@ -127,7 +134,10 @@ pub async fn fetch_snapshot(
         cache,
         cache_ttl,
         oauth,
-        RemoteOverride::default(),
+        RemoteOverride {
+            agy: super::agy::AgyCommand::Discover,
+            ..Default::default()
+        },
         Utc::now(),
     )
     .await
@@ -175,7 +185,13 @@ pub async fn fetch_snapshot_at(
     let endpoints = remote.endpoints.unwrap_or(&default_endpoints);
     let live = match origin {
         Origin::Local(session) => fetch_live(client, session).await,
-        Origin::Remote(token) => fetch_remote(client, cache, oauth, endpoints, token, now).await,
+        Origin::Remote(token) => {
+            let renewal = Renewal {
+                agy: &remote.agy,
+                credential: remote.credential,
+            };
+            fetch_remote(client, cache, oauth, endpoints, token, renewal, now).await
+        }
     };
 
     match live {
@@ -420,6 +436,7 @@ fn saved_session(
     let raw = match credential {
         SavedCredential::Keyring => credential::read()?,
         SavedCredential::Blob(blob) => Some(blob.to_string()),
+        SavedCredential::File(path) => std::fs::read_to_string(path).ok(),
         SavedCredential::Absent => None,
     };
     let Some(raw) = raw else {
@@ -448,7 +465,7 @@ fn session_expired() -> AppError {
 fn refresh_unconfigured() -> AppError {
     AppError::Credentials(
         "Antigravity's saved Google session expired and ai-usagebar has no OAuth client to \
-         refresh it; open Antigravity to sign in again, or set [antigravity] oauth_client_id \
+         refresh it; open Antigravity (or run `agy`) to sign in again, or set [antigravity] oauth_client_id \
          and oauth_client_secret in config.toml"
             .into(),
     )
@@ -535,6 +552,31 @@ async fn refresh_and_persist(
     })
 }
 
+/// What the remote path needs to renew an expired session through `agy`:
+/// the command to run, and where to read the credential again afterwards.
+struct Renewal<'a> {
+    agy: &'a super::agy::AgyCommand,
+    credential: SavedCredential<'a>,
+}
+
+impl Renewal<'_> {
+    /// Run `agy` to renew the saved session, then read it again. `None` when
+    /// `agy` did not run or left nothing readable, so the caller keeps the
+    /// error that sent it here.
+    async fn renewed(&self, cache: &Cache, now: DateTime<Utc>) -> Option<StoredToken> {
+        if !super::agy::renew_session(self.agy, cache, now).await {
+            return None;
+        }
+        let raw = match self.credential {
+            SavedCredential::Keyring => credential::read().ok().flatten()?,
+            SavedCredential::Blob(blob) => blob.to_string(),
+            SavedCredential::File(path) => std::fs::read_to_string(path).ok()?,
+            SavedCredential::Absent => return None,
+        };
+        credential::parse_keyring_blob(&raw).ok()
+    }
+}
+
 /// Quota through the Cloud Code API, as the signed-in Google account.
 ///
 /// A rejected token gets one refresh and one retry, unless it was refreshed a
@@ -547,16 +589,37 @@ async fn fetch_remote(
     oauth: Option<&cloud::OauthClient>,
     endpoints: &cloud::Endpoints,
     token: Result<StoredToken>,
+    renewal: Renewal<'_>,
     now: DateTime<Utc>,
 ) -> Result<AntigravitySnapshot> {
-    let token = token?;
+    let mut token = token?;
     let oauth_path = cloud::oauth_cache_path(cache);
     let mut access =
-        resolve_access_token(client, oauth, endpoints, &oauth_path, &token, now).await?;
+        match resolve_access_token(client, oauth, endpoints, &oauth_path, &token, now).await {
+            Ok(access) => access,
+            // Without an OAuth client this program cannot renew the session
+            // itself, but the `agy` CLI can.
+            Err(e) if oauth.is_none() => {
+                let Some(renewed) = renewal.renewed(cache, now).await else {
+                    return Err(e);
+                };
+                token = renewed;
+                resolve_access_token(client, oauth, endpoints, &oauth_path, &token, now).await?
+            }
+            Err(e) => return Err(e),
+        };
 
     let quota = match cloud::fetch_quota(client, endpoints, &access.value).await {
         Err(e) if is_auth_rejection(&e) && !access.just_refreshed => {
-            access = refresh_and_persist(client, oauth, endpoints, &oauth_path, &token).await?;
+            access = if oauth.is_none() {
+                let Some(renewed) = renewal.renewed(cache, now).await else {
+                    return Err(refresh_unconfigured());
+                };
+                token = renewed;
+                resolve_access_token(client, oauth, endpoints, &oauth_path, &token, now).await?
+            } else {
+                refresh_and_persist(client, oauth, endpoints, &oauth_path, &token).await?
+            };
             cloud::fetch_quota(client, endpoints, &access.value)
                 .await
                 .map_err(|e| {
@@ -2722,6 +2785,7 @@ mod tests {
             credential: SavedCredential::Blob(blob),
             endpoints: Some(eps),
             local_bases: Some(vec![]),
+            ..Default::default()
         }
     }
 
@@ -2863,6 +2927,7 @@ mod tests {
                 credential: SavedCredential::Blob(&blob),
                 endpoints: Some(&eps),
                 local_bases: Some(vec![server.url().into()]),
+                ..Default::default()
             },
             Duration::ZERO,
         )
@@ -2906,6 +2971,7 @@ mod tests {
                 credential: SavedCredential::Absent,
                 endpoints: Some(&eps),
                 local_bases: Some(vec![server.url().into()]),
+                ..Default::default()
             },
             Duration::ZERO,
         )
@@ -2968,6 +3034,7 @@ mod tests {
                         pid: Some(42),
                     },
                 ]),
+                ..Default::default()
             },
             Duration::ZERO,
         )
@@ -3046,6 +3113,7 @@ mod tests {
                         pid: Some(7),
                     },
                 ]),
+                ..Default::default()
             },
             Duration::ZERO,
         )
@@ -3173,6 +3241,124 @@ mod tests {
         assert!(err.to_string().contains("sign in again"), "{err}");
     }
 
+    /// `run` with no OAuth client configured, the case `agy` exists for.
+    async fn run_without_oauth(cache: &Cache, remote: RemoteOverride<'_>) -> Result<FetchOutcome> {
+        fetch_snapshot_at(
+            &reqwest::Client::new(),
+            cache,
+            Duration::ZERO,
+            None,
+            remote,
+            now(),
+        )
+        .await
+    }
+
+    /// An `agy` stand-in: appends to `runs`, then writes `blob` into `file`
+    /// the way the real CLI rewrites the keyring entry.
+    #[cfg(unix)]
+    fn fake_agy(
+        dir: &std::path::Path,
+        runs: &std::path::Path,
+        file: &std::path::Path,
+        blob: &str,
+    ) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("agy");
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\necho \"$@\" >> '{}'\nprintf '%s' '{}' > '{}'\n",
+                runs.display(),
+                blob,
+                file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    /// The whole point: with no OAuth client and an expired session, running
+    /// `agy` renews it and the quota comes back on the same poll.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_expired_session_is_renewed_by_running_agy() {
+        let mut server = mockito::Server::new_async().await;
+        let eps = endpoints(&server);
+        let quota = quota_mock(&mut server, "KEYRING-AT").create_async().await;
+        let _plan = server
+            .mock("POST", "/daily/plan")
+            .with_status(200)
+            .with_body(r#"{"currentTier":{"name":"Pro"}}"#)
+            .create_async()
+            .await;
+        let (td, cache) = fixture();
+        let file = td.path().join("credential");
+        std::fs::write(&file, keyring_blob(EXPIRED, true)).unwrap();
+        let runs = td.path().join("runs");
+        let agy = fake_agy(td.path(), &runs, &file, &keyring_blob(VALID, true));
+
+        let out = run_without_oauth(
+            &cache,
+            RemoteOverride {
+                credential: SavedCredential::File(&file),
+                endpoints: Some(&eps),
+                local_bases: Some(vec![]),
+                agy: super::super::agy::AgyCommand::At(agy),
+            },
+        )
+        .await
+        .expect("agy renewed the session");
+
+        quota.assert_async().await;
+        assert_eq!(out.snapshot.source, AntigravitySource::Remote);
+        assert_eq!(std::fs::read_to_string(runs).unwrap().trim(), "models");
+    }
+
+    /// `agy` that leaves the session as it was changes nothing: the original
+    /// error stands, and the failed attempt is not repeated on the next poll.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agy_that_does_not_renew_keeps_the_original_error_and_runs_once() {
+        let server = mockito::Server::new_async().await;
+        let eps = endpoints(&server);
+        let (td, cache) = fixture();
+        let file = td.path().join("credential");
+        std::fs::write(&file, keyring_blob(EXPIRED, true)).unwrap();
+        let runs = td.path().join("runs");
+        let agy = fake_agy(td.path(), &runs, &file, &keyring_blob(EXPIRED, true));
+        let remote = || RemoteOverride {
+            credential: SavedCredential::File(&file),
+            endpoints: Some(&eps),
+            local_bases: Some(vec![]),
+            agy: super::super::agy::AgyCommand::At(agy.clone()),
+        };
+
+        for _ in 0..2 {
+            let err = run_without_oauth(&cache, remote())
+                .await
+                .expect_err("still expired");
+            assert!(err.to_string().contains("no OAuth client"), "{err}");
+        }
+        assert_eq!(std::fs::read_to_string(runs).unwrap().lines().count(), 1);
+    }
+
+    /// The default seam is off: a test that never mentions `agy` cannot run
+    /// the real CLI, even with an expired session and no OAuth client.
+    #[tokio::test]
+    async fn without_an_agy_command_an_expired_session_is_left_alone() {
+        let server = mockito::Server::new_async().await;
+        let eps = endpoints(&server);
+        let blob = keyring_blob(EXPIRED, true);
+        let (_td, cache) = fixture();
+
+        let err = run_without_oauth(&cache, remote(&blob, &eps))
+            .await
+            .expect_err("nothing renews it");
+        assert!(err.to_string().contains("no OAuth client"), "{err}");
+    }
+
     /// A session saved without a refresh token cannot be renewed here.
     #[tokio::test]
     async fn an_expired_session_without_a_refresh_token_asks_to_sign_in_again() {
@@ -3209,6 +3395,7 @@ mod tests {
                 credential: SavedCredential::Absent,
                 endpoints: Some(&eps),
                 local_bases: Some(vec![]),
+                ..Default::default()
             },
             Duration::ZERO,
         )
@@ -3247,6 +3434,7 @@ mod tests {
                 credential: SavedCredential::Blob(&blob),
                 endpoints: Some(&eps),
                 local_bases: Some(vec![server.url().into()]),
+                ..Default::default()
             },
             Duration::ZERO,
         )

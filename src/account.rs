@@ -11,6 +11,16 @@ use crate::display::{sanitize_untrusted_line, sanitize_untrusted_path};
 use crate::error::{AppError, Result};
 use crate::widget::cli::AccountAction;
 
+/// An error or note as one terminal-safe line.
+///
+/// Every message `account` prints reaches the terminal verbatim, and an
+/// `AppError::Other` is whatever text its constructor assembled — a path, an
+/// account label, a subprocess's stderr. Render through this at the `println!`
+/// rather than trusting each constructor to have remembered.
+fn printable(value: &dyn std::fmt::Display) -> String {
+    sanitize_untrusted_line(&value.to_string())
+}
+
 struct Registered {
     config_path: PathBuf,
     credential_file: PathBuf,
@@ -225,7 +235,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
     let paths = match Paths::for_data_dir(data_dir.to_path_buf(), &config.anthropic) {
         Ok(paths) => paths,
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("error: {}", printable(&error));
             return 1;
         }
     };
@@ -238,14 +248,14 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
         eprintln!(
             "error: {} is the default Claude Desktop profile — use `account switch` for it.\n       \
              This command is for relocated profiles launched with --user-data-dir.",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         );
         return 1;
     }
     if !paths.available() {
         eprintln!(
             "error: no Claude Desktop profile at {}",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         );
         return 1;
     }
@@ -255,15 +265,30 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
         eprintln!(
             "error: a Claude Desktop app is running on {} — quit it first.\n       \
              Two writers on one profile is how history gets corrupted.",
-            paths.data_dir.display()
+            sanitize_untrusted_path(&paths.data_dir)
         );
         return 1;
     }
 
+    let _lock = if !dry_run {
+        match crate::cache::acquire_lock(
+            &paths.account_switch_lock(),
+            claude_desktop::ACCOUNT_LOCK_TIMEOUT,
+        ) {
+            Ok(lock) => Some(lock),
+            Err(error) => {
+                eprintln!("error: {}", printable(&error));
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
+
     let (account_uuid, org_uuid) = match claude_desktop::history_target(&paths) {
         Ok(target) => target,
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("error: {}", printable(&error));
             return 1;
         }
     };
@@ -275,9 +300,12 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
         default_sources(&paths.data_dir, &default_paths.data_dir)
     };
 
-    println!("Merge history    into {}", paths.data_dir.display());
+    println!(
+        "Merge history    into {}",
+        sanitize_untrusted_path(&paths.data_dir)
+    );
     for source in &sources {
-        println!("  from            {}", source.display());
+        println!("  from            {}", sanitize_untrusted_path(source));
     }
     if sources.is_empty() {
         println!("  from            (no other profile found)");
@@ -289,7 +317,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
         if explicit && !looks_like_profile(source) {
             eprintln!(
                 "error: {} is not a Claude Desktop profile (no config.json)",
-                source.display()
+                sanitize_untrusted_path(source)
             );
             bad_sources = true;
         }
@@ -314,14 +342,17 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
     let plan = match claude_desktop::plan_history_merge(&paths) {
         Ok(plan) => plan,
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("error: {}", printable(&error));
             return 1;
         }
     };
 
-    println!("  account         {}", plan.account_uuid);
+    println!(
+        "  account         {}",
+        sanitize_untrusted_line(&plan.account_uuid)
+    );
     match &plan.org_uuid {
-        Some(org) => println!("  org             {org}"),
+        Some(org) => println!("  org             {}", sanitize_untrusted_line(org)),
         None => println!("  org             none yet — nothing to merge into"),
     }
     println!(
@@ -354,13 +385,13 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
     let code = match claude_desktop::apply_history_merge(&paths, &plan) {
         Ok(notes) => {
             for note in &notes {
-                println!("  note: {note}");
+                println!("  note: {}", sanitize_untrusted_line(note));
             }
             println!("  merged");
             0
         }
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("error: {}", printable(&error));
             1
         }
     };
@@ -374,7 +405,7 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
             staged.unreadable.len()
         );
         for path in &staged.unreadable {
-            eprintln!("  skipped  {}", path.display());
+            eprintln!("  skipped  {}", sanitize_untrusted_path(path));
         }
         eprintln!("         This merge is incomplete. Re-run once those are readable.");
         1
@@ -386,7 +417,10 @@ fn merge_history(data_dir: &Path, from: &[PathBuf], dry_run: bool) -> i32 {
 /// status can safely fall back to the conventional account locations.
 fn config_or_default() -> Config {
     Config::load().unwrap_or_else(|error| {
-        eprintln!("ai-usagebar account: using defaults, config.toml did not parse: {error}");
+        eprintln!(
+            "ai-usagebar account: using defaults, config.toml did not parse: {}",
+            printable(&error)
+        );
         Config::default()
     })
 }
@@ -715,14 +749,15 @@ fn active_tag(value: &serde_json::Value) -> &'static str {
 /// obtain a second account's credential is to sign it out and have the user
 /// sign back in as the account being saved.
 fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
+    let shown = sanitize_untrusted_line(label);
     if let Err(error) = crate::config::validate_account_label(label) {
-        eprintln!("ai-usagebar account add: {error}");
+        eprintln!("ai-usagebar account add: {}", printable(&error));
         return 1;
     }
     let config = match config_for_mutation(Config::load()) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("ai-usagebar account add: {error}");
+            eprintln!("ai-usagebar account add: {}", printable(&error));
             return 1;
         }
     };
@@ -731,12 +766,12 @@ fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
         Ok(paths) => {
             eprintln!(
                 "ai-usagebar account add: no Claude Desktop app data at {} (macOS only)",
-                paths.data_dir.display()
+                sanitize_untrusted_path(&paths.data_dir)
             );
             return 1;
         }
         Err(error) => {
-            eprintln!("ai-usagebar account add: {error}");
+            eprintln!("ai-usagebar account add: {}", printable(&error));
             return 1;
         }
     };
@@ -745,7 +780,7 @@ fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
     let active = claude_desktop::active_account_uuid(&paths.config_json())
         .and_then(|uuid| claude_desktop::label_for_uuid(&profiles, &uuid).map(str::to_string));
 
-    println!("Capturing a Claude Desktop account as {label:?}.");
+    println!("Capturing a Claude Desktop account as {shown:?}.");
     println!("  The app will close and reopen at its login screen, where you sign in as the");
     println!("  account you want to save. Nothing else on this machine is touched.");
     match &active {
@@ -754,7 +789,7 @@ fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
         ),
         None => println!(
             "  Your current login is copied to {} first and restored if you cancel.",
-            paths.prelogin_dir().display()
+            sanitize_untrusted_path(&paths.prelogin_dir())
         ),
     }
     if !assume_yes && !confirm("  Close Claude and start the login?") {
@@ -778,11 +813,11 @@ fn add_desktop(label: &str, email: Option<&str>, assume_yes: bool) -> i32 {
         &mut notes,
     );
     for note in &notes {
-        println!("  note: {note}");
+        println!("  note: {}", printable(&note));
     }
     match outcome {
         Err(error) => {
-            eprintln!("ai-usagebar account add: {error}");
+            eprintln!("ai-usagebar account add: {}", printable(&error));
             1
         }
         Ok(claude_desktop::capture::CaptureOutcome::TimedOut) => {
@@ -837,7 +872,7 @@ fn switch(args: &SwitchArgs) -> i32 {
     let config = match config_for_mutation(Config::load()) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("ai-usagebar account switch: {error}");
+            eprintln!("ai-usagebar account switch: {}", printable(&error));
             return 1;
         }
     };
@@ -856,7 +891,7 @@ fn switch(args: &SwitchArgs) -> i32 {
             Ok(true) => acted = true,
             Ok(false) => {}
             Err(error) => {
-                eprintln!("ai-usagebar account switch: {error}");
+                eprintln!("ai-usagebar account switch: {}", printable(&error));
                 failed = true;
             }
         }
@@ -869,7 +904,7 @@ fn switch(args: &SwitchArgs) -> i32 {
             Ok(true) => acted = true,
             Ok(false) => {}
             Err(error) => {
-                eprintln!("ai-usagebar account switch: {error}");
+                eprintln!("ai-usagebar account switch: {}", printable(&error));
                 failed = true;
             }
         }
@@ -894,7 +929,7 @@ fn switch_desktop(config: &Config, args: &SwitchArgs, tolerant: bool) -> Result<
         if !tolerant {
             return Err(AppError::Other(format!(
                 "no Claude Desktop app data at {} (macOS only)",
-                paths.data_dir.display()
+                sanitize_untrusted_path(&paths.data_dir)
             )));
         }
         return Ok(false);
@@ -910,7 +945,7 @@ fn switch_desktop(config: &Config, args: &SwitchArgs, tolerant: bool) -> Result<
     let plan = match claude_desktop::plan_switch(&paths, args.label, args.opts.clone()) {
         Ok(plan) => plan,
         Err(error) if tolerant => {
-            println!("Claude Desktop   skipped: {error}");
+            println!("Claude Desktop   skipped: {}", printable(&error));
             return Ok(false);
         }
         Err(error) => return Err(error),
@@ -938,7 +973,7 @@ fn switch_desktop(config: &Config, args: &SwitchArgs, tolerant: bool) -> Result<
 
     let notes = claude_desktop::apply_switch(&paths, &plan, &claude_desktop::app::DesktopApp)?;
     for note in &notes {
-        println!("  note: {note}");
+        println!("  note: {}", printable(&note));
     }
     println!(
         "  switched — the app is reopening as {:?}.",
@@ -1177,7 +1212,10 @@ fn plan_lines(plan: &SwitchPlan) -> Vec<String> {
         out.push("  remote bridge   clear (a stale session id breaks /remote-control)".to_string());
     }
     if !plan.archive_members.is_empty() {
-        out.push(format!("  rollback        {}", plan.archive.display()));
+        out.push(format!(
+            "  rollback        {}",
+            sanitize_untrusted_path(&plan.archive)
+        ));
     }
     out
 }
@@ -1275,25 +1313,32 @@ fn ask(prompt: &str) -> Option<String> {
 }
 
 fn add(label: &str, login: bool) -> i32 {
+    let shown = sanitize_untrusted_line(label);
     let registration = match register(label) {
         Ok(registration) => registration,
         Err(error) => {
-            eprintln!("ai-usagebar account: could not add {label:?}: {error}");
+            eprintln!(
+                "ai-usagebar account: could not add {shown:?}: {}",
+                printable(&error)
+            );
             return 1;
         }
     };
 
     if registration.already_existed {
         println!(
-            "Claude account {label:?} is already configured in {}.",
-            registration.config_path.display()
+            "Claude account {shown:?} is already configured in {}.",
+            sanitize_untrusted_path(&registration.config_path)
         );
     } else {
         println!(
-            "Added Claude account {label:?} to {}.",
-            registration.config_path.display()
+            "Added Claude account {shown:?} to {}.",
+            sanitize_untrusted_path(&registration.config_path)
         );
-        println!("  credentials_path = {}", registration.credential_display);
+        println!(
+            "  credentials_path = {}",
+            sanitize_untrusted_line(&registration.credential_display)
+        );
     }
     if !registration.anthropic_enabled {
         println!("  note: [anthropic] is disabled; set enabled = true for this account to appear.");
@@ -1306,7 +1351,7 @@ fn add(label: &str, login: bool) -> i32 {
                 "Automatic login requires this account's credentials_path to end in \
                  .credentials.json; it currently points to {}. Update that entry or \
                  keep managing its credential file manually.",
-                registration.credential_file.display()
+                sanitize_untrusted_path(&registration.credential_file)
             );
             return 1;
         }
@@ -1356,7 +1401,8 @@ fn add(label: &str, login: bool) -> i32 {
             // clobber config edits made while the interactive command ran.
             if let Err(error) = restamp_config(&registration.config_path) {
                 eprintln!(
-                    "warning: login finished, but config.toml could not be touched for live reload: {error}"
+                    "warning: login finished, but config.toml could not be touched for live reload: {}",
+                    printable(&error)
                 );
             }
             println!();
@@ -1498,10 +1544,7 @@ fn switch_codex(config: &Config, args: &SwitchArgs) -> i32 {
     let outcome = match outcome {
         Ok(outcome) => outcome,
         Err(error) => {
-            eprintln!(
-                "ai-usagebar account switch: {}",
-                sanitize_untrusted_line(&error.to_string())
-            );
+            eprintln!("ai-usagebar account switch: {}", printable(&error));
             return 1;
         }
     };
@@ -1558,7 +1601,7 @@ fn add_codex(label: &str, login: bool, adopt: bool) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not add Codex account {shown:?}: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             return 1;
         }
@@ -1607,7 +1650,7 @@ fn add_codex(label: &str, login: bool, adopt: bool) -> i32 {
             Err(error) => {
                 eprintln!(
                     "ai-usagebar account: could not adopt the current Codex login: {}",
-                    sanitize_untrusted_line(&error.to_string())
+                    printable(&error)
                 );
                 1
             }
@@ -1644,7 +1687,7 @@ fn add_codex(label: &str, login: bool, adopt: bool) -> i32 {
             1
         }
         Err(error) => {
-            eprintln!("could not start `codex login`: {error}");
+            eprintln!("could not start `codex login`: {}", printable(&error));
             1
         }
     }
@@ -1706,7 +1749,7 @@ fn adopt_claude(label: &str) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not add {shown:?}: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             return 1;
         }
@@ -1741,7 +1784,7 @@ fn adopt_claude(label: &str) -> i32 {
         Err(error) => {
             eprintln!(
                 "ai-usagebar account: could not adopt the current Claude login: {}",
-                sanitize_untrusted_line(&error.to_string())
+                printable(&error)
             );
             1
         }
@@ -1849,6 +1892,19 @@ mod tests {
         assert!(out.contains("restore this account's cookies"), "{out}");
         assert!(
             out.contains("rollback        /archives/rollback.tar"),
+            "{out}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_lines_sanitizes_untrusted_archive_path() {
+        let mut plan = plan_fixture();
+        plan.archive = PathBuf::from("/archives/\x1b[2Krollback.tar");
+        let out = plan_lines(&plan).join("\n");
+        assert!(!out.contains('\u{1b}'), "escape sequence leaked: {out}");
+        assert!(
+            out.contains("rollback        /archives/[2Krollback.tar"),
             "{out}"
         );
     }
@@ -2270,5 +2326,42 @@ mod tests {
         let dir = PathBuf::from("/Users/x/Library/Application Support/Claude Accounts/personal");
         let ps = "/Applications/Claude.app/Contents/MacOS/Claude\n/bin/zsh -l\n";
         assert!(!super::ps_shows_user_data_dir(ps, &[dir]));
+    }
+
+    /// `account` prints reach the terminal verbatim, so a print must not take
+    /// a path from `Path::display` — it escapes nothing — nor an error or note
+    /// interpolated bare, whose text is whatever its constructor assembled.
+    /// Paths go through `sanitize_untrusted_path`, messages through `printable`.
+    ///
+    /// Scoped to prints: a bare `.display()` is the correct call when the
+    /// string is read by a program, as with the `--user-data-dir=` needle.
+    #[test]
+    fn no_account_print_interpolates_raw_display() {
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/account.rs");
+        let source = std::fs::read_to_string(&file).expect("readable account.rs");
+        let body = crate::guard::production_code(&source);
+        // `println!(` also covers `eprintln!(`, and `print!(` covers `eprint!(`.
+        let sites: Vec<String> = ["println!(", "print!("]
+            .into_iter()
+            .flat_map(|opener| crate::guard::calls(&body, opener))
+            .filter(|call| {
+                [".display()", "{error}", "{note}"]
+                    .iter()
+                    .any(|needle| call.contains(needle))
+            })
+            .map(|call| call.replace('\n', " "))
+            .collect();
+        assert!(
+            sites.is_empty(),
+            "an account CLI print reaches the terminal verbatim; render its path with \
+             `sanitize_untrusted_path` and its error or note with `printable`. \
+             Found: {sites:#?}"
+        );
+    }
+
+    #[test]
+    fn printable_renders_an_error_as_one_terminal_safe_line() {
+        let error = AppError::Other("bad \x1b[2Kpath\nRESTORED: 0 files\u{202e}".to_string());
+        assert_eq!(printable(&error), "bad [2Kpath RESTORED: 0 files");
     }
 }

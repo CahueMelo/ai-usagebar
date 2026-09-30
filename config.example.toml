@@ -79,7 +79,9 @@
 # Quota-threshold desktop notifications, fired after a fresh fetch when a
 # window crosses the threshold (Linux notify-send or macOS Notification Center;
 # Windows delivery follows). One notification per crossing: a window re-arms only when
-# usage drops 7 points below the threshold or the window's reset moves later.
+# usage drops 7 points below the threshold or the window's reset moves later by
+# more than an hour and a half — a smaller move is the same window reported
+# again, with the sub-second drift the vendors' reset instants carry.
 # Banked reset credits (Codex, SuperGrok) also notify 48h before they expire.
 # [notifications]
 # enabled = true    # false turns every quota/expiry notification off
@@ -220,10 +222,11 @@ api_key_env = "OPENROUTER_API_KEY"
 # api_key_env = "OPENROUTER_WORK_API_KEY"
 # api_key = "sk-or-v1-..."  # optional fallback; chmod 600 when inline
 #
-# The same array works for [zai], [deepseek], [kilo], [novita], [moonshot],
-# [grok], [minimax], and [orcarouter] — e.g. [[deepseek.accounts]] — with the
-# same show_default_account switch. Region/team/organization/display settings
-# stay per provider. See docs/api-key-accounts.md.
+# The same array works for [zai], [deepseek], [deepinfra], [kilo], [novita],
+# [moonshot], [grok], [minimax], and [orcarouter] — e.g.
+# [[deepinfra.accounts]] — with the same show_default_account switch.
+# Region/team/organization/display settings stay per provider. See
+# docs/api-key-accounts.md.
 
 [deepseek]
 # Disabled by default — enable once you've set a key (env var or inline).
@@ -235,6 +238,15 @@ api_key_env = "DEEPSEEK_API_KEY"  # checked first; if set + non-empty, used
 # Turn the balance into a meter by stating the tank size — see the
 # "Account-balance vendors" note below for both settings.
 # display_limit = 200             # e.g. a $200 top-up you want to burn down
+# headline = "amount"              # "amount" | "percent"
+
+[deepinfra]
+# Disabled by default. Reads prepaid balance and current-month usage from the
+# documented DeepInfra billing endpoints.
+enabled = false
+api_key_env = "DEEPINFRA_API_KEY"
+# api_key = "..."                  # fallback; prefer the environment variable
+# display_limit = 50                # optional prepaid tank size in USD
 # headline = "amount"              # "amount" | "percent"
 
 [ollama]
@@ -453,8 +465,9 @@ enabled = false
 # Override the cursor-agent CLI's own login file, tried only when db_path
 # does not exist. Leave commented out to use the platform default:
 #   Linux:   ~/.config/cursor/auth.json
-#   macOS:   ~/Library/Application Support/cursor/auth.json
-#   Windows: %APPDATA%\cursor\auth.json
+#   macOS:   ~/.cursor/auth.json (the CLI keeps its session in the Keychain
+#            there; the Keychain is read when this file is absent too)
+#   Windows: %APPDATA%\Cursor\auth.json
 # agent_auth_path = "/home/you/.config/cursor/auth.json"
 
 [minimax]

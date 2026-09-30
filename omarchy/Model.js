@@ -362,6 +362,8 @@ function barChips(entries, selected, showAll, showValue, showProvider, loading, 
     }
     var brand = brandIconFile(entry)
     chips.push({
+      // The bar turns each chip into a target for its own entry.
+      id: entry.id,
       brand: brand,
       icon: brand !== "" ? providerIcon(entry) : providerShort(entry),
       label: label,
