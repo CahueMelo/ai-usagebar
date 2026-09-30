@@ -24,4 +24,10 @@ for (const modern of [false, true]) {
     assert.equal(modern ? result.orientation : result.vertical, modern ? 1 : true);
 }
 
+// The top bar swaps its label for an icon when there is nothing to draw. That
+// only holds if every panel write goes through the helper that makes the swap.
+const panelWrites = source.match(/\b_label\.clutter_text\.set_markup\(/g) ?? [];
+assert.equal(panelWrites.length, 1, 'top-bar markup must go through _setPanelMarkup');
+assert.match(source, /\n {4}_setPanelMarkup\(markup\) \{\n[\s\S]*?this\._label\.clutter_text\.set_markup\(markup\);/);
+
 console.log('GNOME layout compatibility tests passed');

@@ -65,7 +65,7 @@ mkdir -p "$DEST" && cp -r * "$DEST"/      # or: ln -s "$PWD" "$DEST"
 
 | Setting | Default | Notes |
 |---|---|---|
-| Show 5h / weekly bar | on / on | toggle either window |
+| Show 5h / weekly bar | on / on | toggle either window; with nothing left to draw, the top bar shows the vendor's icon |
 | Show percentage | on | numeric `%` next to each bar |
 | Bar width | 8 | cells per bar (4–20) |
 | Refresh interval | 30 s | 5–3600 |
