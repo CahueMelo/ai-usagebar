@@ -28,6 +28,7 @@ pub(crate) const VENDOR_SECRET_ENV_VARS: &[&str] = &[
     "ZAI_API_KEY",
     "OPENROUTER_API_KEY",
     "DEEPSEEK_API_KEY",
+    "DEEPINFRA_API_KEY",
     "KIMI_API_KEY",
     "KILO_API_KEY",
     "NOVITA_API_KEY",
@@ -161,6 +162,7 @@ pub enum VendorId {
     Zai,
     Openrouter,
     Deepseek,
+    Deepinfra,
     Kimi,
     Kilo,
     Novita,
@@ -218,6 +220,7 @@ impl VendorId {
             VendorId::Zai => "zai",
             VendorId::Openrouter => "openrouter",
             VendorId::Deepseek => "deepseek",
+            VendorId::Deepinfra => "deepinfra",
             VendorId::Kimi => "kimi",
             VendorId::Kilo => "kilo",
             VendorId::Novita => "novita",
@@ -250,6 +253,7 @@ impl VendorId {
             VendorId::Zai => "Z.AI",
             VendorId::Openrouter => "OpenRouter",
             VendorId::Deepseek => "DeepSeek",
+            VendorId::Deepinfra => "DeepInfra",
             VendorId::Kimi => "Kimi",
             VendorId::Kilo => "Kilo",
             VendorId::Novita => "Novita",
@@ -282,6 +286,7 @@ impl VendorId {
             VendorId::Zai => VendorId::Zai.short_name(),
             VendorId::Openrouter => "󱙺",
             VendorId::Deepseek => "󰧑",
+            VendorId::Deepinfra => VendorId::Deepinfra.short_name(),
             VendorId::Kimi => VendorId::Kimi.short_name(),
             VendorId::Kilo => "󰭟",
             VendorId::Novita => "󰄔",
@@ -318,6 +323,7 @@ impl VendorId {
             VendorId::Zai => "zai",
             VendorId::Openrouter => "opr",
             VendorId::Deepseek => "dsk",
+            VendorId::Deepinfra => "dif",
             VendorId::Kimi => "kmi",
             VendorId::Kilo => "klo",
             VendorId::Novita => "nvt",
@@ -354,6 +360,7 @@ impl VendorId {
             VendorId::Zai => "zai",
             VendorId::Openrouter => "openrouter",
             VendorId::Deepseek => "deepseek",
+            VendorId::Deepinfra => "deepinfra",
             VendorId::Kimi => "kimi",
             VendorId::Kilo => "kilo",
             VendorId::Novita => "novita",
@@ -390,6 +397,7 @@ impl VendorId {
             | VendorId::Zai
             | VendorId::Openrouter
             | VendorId::Deepseek
+            | VendorId::Deepinfra
             | VendorId::Kimi
             | VendorId::Kilo
             | VendorId::Novita
@@ -425,6 +433,7 @@ impl VendorId {
             VendorId::Zai => "ZAI_API_KEY",
             VendorId::Openrouter => "OPENROUTER_API_KEY",
             VendorId::Deepseek => "DEEPSEEK_API_KEY",
+            VendorId::Deepinfra => "DEEPINFRA_API_KEY",
             VendorId::Kimi => "KIMI_API_KEY",
             VendorId::Kilo => "KILO_API_KEY",
             VendorId::Novita => "NOVITA_API_KEY",
@@ -490,6 +499,7 @@ impl VendorId {
             | VendorId::Zai
             | VendorId::Openrouter
             | VendorId::Deepseek
+            | VendorId::Deepinfra
             | VendorId::Kilo
             | VendorId::Novita
             | VendorId::Moonshot
@@ -517,6 +527,7 @@ impl VendorId {
             | VendorId::Zai
             | VendorId::Openrouter
             | VendorId::Deepseek
+            | VendorId::Deepinfra
             | VendorId::Kilo
             | VendorId::Novita
             | VendorId::Moonshot
@@ -541,6 +552,7 @@ impl VendorId {
             VendorId::Zai,
             VendorId::Openrouter,
             VendorId::Deepseek,
+            VendorId::Deepinfra,
             VendorId::Kimi,
             VendorId::Kilo,
             VendorId::Novita,
@@ -690,6 +702,7 @@ mod tests {
             "ZAI_API_KEY",
             "OPENROUTER_API_KEY",
             "DEEPSEEK_API_KEY",
+            "DEEPINFRA_API_KEY",
             "KIMI_API_KEY",
             "KILO_API_KEY",
             "NOVITA_API_KEY",

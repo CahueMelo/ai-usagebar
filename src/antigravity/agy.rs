@@ -122,6 +122,11 @@ pub async fn renew_session(command: &AgyCommand, cache: &Cache, now: DateTime<Ut
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    // A vendor-CLI spawn must not inherit this process's provider keys —
+    // the same discipline as running `claude` for account capture.
+    for var in crate::vendor::vendor_secret_env_vars_to_remove(&[]) {
+        cmd.env_remove(var);
+    }
     #[cfg(windows)]
     cmd.creation_flags(crate::process::CREATE_NO_WINDOW);
 

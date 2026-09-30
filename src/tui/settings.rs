@@ -90,6 +90,14 @@ pub const KEY_VENDORS: &[KeyVendor] = &[
         note: "",
     },
     KeyVendor {
+        id: VendorId::Deepinfra,
+        label: "DeepInfra",
+        section: VendorId::Deepinfra.config_section(),
+        config_key: "api_key",
+        secret_label: "API key",
+        note: "billing balance and monthly spend",
+    },
+    KeyVendor {
         id: VendorId::Kimi,
         label: "Kimi",
         section: VendorId::Kimi.config_section(),
@@ -2007,6 +2015,7 @@ mod tests {
             VendorId::Zai,
             VendorId::Openrouter,
             VendorId::Deepseek,
+            VendorId::Deepinfra,
             VendorId::Kilo,
             VendorId::Novita,
             VendorId::Moonshot,

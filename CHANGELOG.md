@@ -9,8 +9,34 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **AUR `ai-usagebar-bin` package verifies detached PGP signatures against `validpgpkeys`.**
+  Following upstream release signing introduced in v1.28.0 (#257), `packaging/aur/PKGBUILD-bin`
+  and `.SRCINFO-bin` now declare maintainer key `AE42EF5D73DD92E248815C95B65CCAAF64A99438`
+  in `validpgpkeys` and fetch detached `.sig` signatures alongside each architecture's
+  binary archive (`source_x86_64` and `source_aarch64`), allowing `makepkg` to automatically
+  verify release integrity and authenticity (#282).
+- **Native DeepInfra billing support.** The widget, TUI, aggregate report, and
+  named API-key accounts now read `DEEPINFRA_API_KEY`, combine the documented
+  billing checklist and current-month usage endpoints, convert usage cents to
+  dollars, and show prepaid balance, monthly spend, optional limit, and period.
+
 ### Fixed
 
+- **Account CLI commands sanitize filesystem paths and account labels in terminal output.**
+  Terminal output from `account add`, `account switch`, and `account merge-history`
+  previously interpolated raw `.display()` paths and unsanitized labels directly
+  into `println!` and `eprintln!`, violating the project invariant that untrusted
+  text is sanitized at the sink and risking ANSI escape sequence injection into
+  the terminal. Paths now route through `sanitize_untrusted_path`; errors,
+  capture notes and config parse messages through one `printable` helper. A
+  guard test fails on any `account` print that interpolates `.display()`,
+  `{error}` or `{note}` bare.
+- **`account merge-history` synchronizes under `account_switch_lock`.**
+  Running history merges now acquires the profile switch lock before staging
+  and merging, preventing race conditions and potential profile corruption
+  when concurrent switches or refreshes target the same profile.
 - **Antigravity keeps reporting with only the `agy` CLI installed.** The saved
   Google session lasts about an hour and only a running Antigravity renews it;
   with the desktop app closed nothing did, so the widget fell to "session
@@ -20,7 +46,8 @@ Each release is also published at
   the saved credential as a side effect) and reads the credential again. `agy`
   is found on `PATH`, then in `~/.local/bin`. The run is bounded to 25 seconds
   and attempted at most once every ten minutes, failures included, so a dead
-  refresh token never turns into a spawn per poll. `agy`'s own background
+  refresh token never turns into a spawn per poll, and the spawn never
+  inherits this process's provider key env vars. `agy`'s own background
   updater is switched off for that run (`AGY_CLI_DISABLE_AUTO_UPDATE=true`):
   on Windows it opens a console window of its own that no flag on our spawn
   can hide. Configuring

@@ -10,7 +10,7 @@ def installed_binary(name, home=None, override=None):
     home = home or os.path.expanduser("~")
     if override:
         return override
-    config_path = os.path.join(home, ".local/share/ai-usagebar/tray/binaries.json")
+    config_path = os.path.join(home, ".local", "share", "ai-usagebar", "tray", "binaries.json")
     try:
         with open(config_path, encoding="utf-8") as config_file:
             configured = json.load(config_file).get(name)
@@ -18,12 +18,12 @@ def installed_binary(name, home=None, override=None):
             return configured
     except (OSError, ValueError, TypeError, AttributeError):
         pass
-    for base in (os.path.join(home, ".local/bin"), os.path.join(home, ".cargo/bin"),
+    for base in (os.path.join(home, ".local", "bin"), os.path.join(home, ".cargo", "bin"),
                  "/usr/local/bin", "/usr/bin"):
         candidate = os.path.join(base, name)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    return os.path.join(home, ".local/bin", name)
+    return os.path.join(home, ".local", "bin", name)
 
 
 def tr(english, portuguese, language=None):
