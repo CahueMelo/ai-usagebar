@@ -141,8 +141,8 @@ BarWidget {
   }
 
   readonly property string tipHtml: {
-    if (!root.colorCodeUsage) return ""
     var rows = root.panelItem ? (root.panelItem.ragTooltipRows || []) : []
+    var colorOn = root.colorCodeUsage
     var _g = root.panelItem ? root.panelItem.hexGreen : ""
     var _y = root.panelItem ? root.panelItem.hexYellow : ""
     var _o = root.panelItem ? root.panelItem.hexOrange : ""
@@ -150,18 +150,28 @@ BarWidget {
     var _ = [_g, _y, _o, _r]
     if (!rows || rows.length === 0) return ""
     var lines = []
+    var anyColor = false
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i] || {}
       var body = root.escapeHtml(row.text || "")
       if (body === "") continue
       var hex = ""
-      if (row.severity && root.panelItem && typeof root.panelItem.severityHexOf === "function")
-        hex = String(root.panelItem.severityHexOf(row.severity) || "")
-      if (hex !== "")
+      var sev = String(row.severity || "")
+      if (colorOn && sev && root.panelItem && typeof root.panelItem.severityHexOf === "function")
+        hex = String(root.panelItem.severityHexOf(sev) || "")
+      else if (!colorOn && sev === "critical")
+        // Classic mode: only the depleted pool is red, so the tip explains
+        // why the tray mark is lit without turning on full RAG.
+        hex = String(_r || "")
+      if (hex !== "") {
+        anyColor = true
         lines.push("<span style=\"color:" + hex + "\">" + body + "</span>")
-      else
+      } else {
         lines.push(body)
+      }
     }
+    if (lines.length === 0) return ""
+    if (!colorOn && !anyColor) return ""
     return lines.join("<br/>")
   }
 
