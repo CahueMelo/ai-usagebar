@@ -10,7 +10,7 @@ def installed_binary(name, home=None, override=None):
     home = home or os.path.expanduser("~")
     if override:
         return override
-    config_path = os.path.join(home, ".local/share/ai-usagebar/tray/binaries.json")
+    config_path = os.path.join(home, ".local", "share", "ai-usagebar", "tray", "binaries.json")
     try:
         with open(config_path, encoding="utf-8") as config_file:
             configured = json.load(config_file).get(name)
@@ -18,12 +18,12 @@ def installed_binary(name, home=None, override=None):
             return configured
     except (OSError, ValueError, TypeError, AttributeError):
         pass
-    for base in (os.path.join(home, ".local/bin"), os.path.join(home, ".cargo/bin"),
+    for base in (os.path.join(home, ".local", "bin"), os.path.join(home, ".cargo", "bin"),
                  "/usr/local/bin", "/usr/bin"):
         candidate = os.path.join(base, name)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    return os.path.join(home, ".local/bin", name)
+    return os.path.join(home, ".local", "bin", name)
 
 
 def tr(english, portuguese, language=None):
@@ -129,15 +129,22 @@ def metric_pace(metric, now=None, language=None):
     if elapsed < min(3600, max(60, window * 0.01)):
         return None
     projected = used * window / elapsed
-    if projected <= 90:
-        return ("ahead", None)
-    if projected <= 100:
+    # model.js paceVerdict: the ratio and the gap between the bar and the tick
+    # (percentage points) must both pass. Over 110% and 3 points is "over"
+    # (yellow, no flame); over 130% and 5 points, or over the line with under
+    # 10% left, is "behind" (red, flame).
+    left = 100 - used
+    gap = used - elapsed * 100 / window
+    critical = (projected > 100 and left < PACE_CRITICAL_LEFT) or (
+        projected > PACE_CRITICAL_PERCENT and gap >= PACE_CRITICAL_GAP
+    )
+    if not critical and projected > PACE_OVER_PERCENT and gap >= PACE_OVER_GAP:
+        over = round(projected - 100)
+        return ("over", tr(f"~{over}% over pace", f"~{over}% acima do ritmo", language))
+    if not critical:
+        if projected <= 90:
+            return ("ahead", None)
         spare = max(0, round(100 - projected))
-        if spare < 1:
-            # The official popover paints red once the projected cushion is
-            # gone (model.js meterColor: onTrack with sparePercent < 1 is red,
-            # not yellow), so zero spare reports as behind.
-            return ("behind", tr("~0% spare", "~0% de folga", language))
         return ("near", tr(f"~{spare}% spare", f"~{spare}% de folga", language))
     if used >= 100:
         return ("behind", tr("🔥 Limit reached", "🔥 Limite atingido", language))
@@ -145,14 +152,32 @@ def metric_pace(metric, now=None, language=None):
     if 0 < until_limit < remaining:
         duration = compact_duration(until_limit)
         return ("behind", tr(f"🔥 Limit in {duration}", f"🔥 Limite em {duration}", language))
-    return None
+    return ("behind", None)
 
 
-def meter_color(metric, pace):
-    if isinstance(metric.get("percent"), (int, float)) and metric["percent"] >= 100:
+# Mirrors model.js meterColor: the pace verdict when there is one (blue calm,
+# yellow over, red behind), how much is left when there is not (red under 20%,
+# yellow under 50%, blue otherwise), red once spent.
+METER_RED_BELOW_LEFT = 20
+METER_YELLOW_BELOW_LEFT = 50
+PACE_OVER_PERCENT = 110
+PACE_OVER_GAP = 3
+PACE_CRITICAL_PERCENT = 130
+PACE_CRITICAL_GAP = 5
+PACE_CRITICAL_LEFT = 10
+
+
+def meter_color(metric, pace=None):
+    used = metric.get("percent")
+    if not isinstance(used, (int, float)) or isinstance(used, bool):
+        return "blue"
+    if used >= 100:
         return "red"
     if pace:
-        return {"ahead": "blue", "near": "yellow", "behind": "red"}[pace[0]]
-    return {"critical": "red", "high": "yellow", "mid": "yellow"}.get(
-        metric.get("severity"), "blue"
-    )
+        return {"ahead": "blue", "near": "blue", "over": "yellow", "behind": "red"}[pace[0]]
+    left = 100 - used
+    if left < METER_RED_BELOW_LEFT:
+        return "red"
+    if left < METER_YELLOW_BELOW_LEFT:
+        return "yellow"
+    return "blue"

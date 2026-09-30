@@ -319,6 +319,10 @@ pub fn compact_cells(snapshot: &VendorSnapshot) -> (String, Vec<(String, PaceSev
             }],
         ),
         VendorSnapshot::Deepseek(s) => (String::new(), vec![money_cell(s.balance, &s.currency)]),
+        VendorSnapshot::Deepinfra(s) => (
+            String::new(),
+            vec![(usd(s.balance), crate::deepinfra::vendor::severity(s))],
+        ),
         VendorSnapshot::Kimi(s) => {
             let mut cells = vec![pct("5h", s.window_pct())];
             if s.has_weekly {
@@ -521,6 +525,7 @@ pub fn headline_pct(snapshot: &VendorSnapshot) -> Option<i32> {
         VendorSnapshot::Openrouter(_)
         | VendorSnapshot::OrcaRouter(_)
         | VendorSnapshot::Deepseek(_)
+        | VendorSnapshot::Deepinfra(_)
         | VendorSnapshot::Kilo(_)
         | VendorSnapshot::Novita(_)
         | VendorSnapshot::Moonshot(_)
@@ -586,6 +591,7 @@ pub(crate) fn sections_with_metadata_for(
                 VendorSnapshot::Openrouter(s) => openrouter_sections(s, prefs),
                 VendorSnapshot::OrcaRouter(s) => orcarouter_sections(s, now),
                 VendorSnapshot::Deepseek(s) => deepseek_sections(s, prefs),
+                VendorSnapshot::Deepinfra(s) => deepinfra_sections(s, prefs),
                 VendorSnapshot::Kimi(s) => kimi_sections(s, now, pace_tolerance),
                 VendorSnapshot::Kilo(s) => kilo_sections(s, prefs),
                 VendorSnapshot::Novita(s) => novita_sections(s, prefs),
@@ -1698,6 +1704,58 @@ fn deepseek_sections(s: &crate::usage::DeepseekSnapshot, prefs: DisplayPrefs) ->
     v
 }
 
+fn deepinfra_sections(
+    snapshot: &crate::usage::DeepInfraSnapshot,
+    prefs: DisplayPrefs,
+) -> SectionBuilder {
+    let mut sections = SectionBuilder::new(vec![Section::Title {
+        left: "DeepInfra".into(),
+        right: None,
+    }]);
+    sections.push(Section::Spacer);
+    push_balance_headline(
+        &mut sections,
+        "Balance",
+        snapshot.balance,
+        "USD",
+        crate::deepinfra::vendor::severity(snapshot),
+        None,
+        prefs,
+    );
+    sections.push(Section::Spacer);
+    match snapshot.monthly_limit {
+        Some(limit) if limit > 0.0 => {
+            let percent = snapshot.monthly_consumed_pct().unwrap_or_default();
+            // A vendor-defined billing period with no reset instant — exactly
+            // the case push_metric exists for (a bare push would trip the
+            // reset-metadata assert the moment a limit is set).
+            sections.push_metric(
+                Section::Metric {
+                    label: "Monthly usage".into(),
+                    pct: percent.clamp(0, 100) as u16,
+                    severity: severity_for(percent),
+                    value_label: format!("{} / {}", usd(snapshot.monthly_spend), usd(limit)),
+                    footnote: format!("{percent}% used in {}", snapshot.period),
+                },
+                None,
+            );
+        }
+        Some(limit) => sections.push(Section::Text {
+            label: "Monthly usage".into(),
+            value: format!("{} / {}", usd(snapshot.monthly_spend), usd(limit)),
+        }),
+        None => sections.push(Section::Text {
+            label: "Monthly usage".into(),
+            value: format!("{} / no limit", usd(snapshot.monthly_spend)),
+        }),
+    }
+    sections.push(Section::Text {
+        label: "Period".into(),
+        value: snapshot.period.clone(),
+    });
+    sections
+}
+
 /// Kimi reports each quota as used/limit against a limit of 100, so the pair
 /// is the percentage in longhand. Projecting both onto a `UsageWindow` lets
 /// the shared `push_window` draw them, which is what keeps the row identical
@@ -2184,6 +2242,29 @@ mod tests {
         assert!(
             pools.iter().all(|p| p.reset_at.is_some()),
             "the reset time still travels with the row"
+        );
+    }
+
+    #[test]
+    fn deepinfra_monthly_usage_carries_no_reset_when_a_limit_is_set() {
+        // A vendor-defined billing period has no reset instant; the row must
+        // still travel through push_metric (reset_at None) — a bare push
+        // trips the reset-metadata assert the moment a limit is set.
+        let snapshot = VendorSnapshot::Deepinfra(crate::usage::DeepInfraSnapshot {
+            balance: 12.5,
+            monthly_spend: 10.0,
+            monthly_limit: Some(50.0),
+            period: "2026.09".into(),
+        });
+        let rows = sections_with_metadata_for(&ready(snapshot), now(), 5);
+        let metrics: Vec<_> = rows
+            .iter()
+            .filter(|p| matches!(p.section, Section::Metric { .. }))
+            .collect();
+        assert_eq!(metrics.len(), 1);
+        assert!(
+            metrics[0].reset_at.is_none(),
+            "a vendor billing period has no reset instant"
         );
     }
 

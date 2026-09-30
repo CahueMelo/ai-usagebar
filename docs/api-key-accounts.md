@@ -12,6 +12,7 @@ The array works for these sections:
 | `[zai]` | Z.AI |
 | `[openrouter]` | OpenRouter — see also the [OpenRouter account guide](openrouter-accounts.md) |
 | `[deepseek]` | DeepSeek |
+| `[deepinfra]` | DeepInfra |
 | `[kilo]` | Kilo |
 | `[novita]` | Novita |
 | `[moonshot]` | Moonshot |

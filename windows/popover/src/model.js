@@ -399,28 +399,77 @@ function percentHeadline(row, showAs) {
   return row.leftPercent + "% left";
 }
 
+// Bands of the bar color on what is left of the window, used while there is no
+// pace projection yet (the first stretch of a window): red under 20%, yellow
+// under 50%, blue otherwise.
+const METER_RED_BELOW_LEFT = 20;
+const METER_YELLOW_BELOW_LEFT = 50;
+
+// Tolerance around the pace line. The tick is the ideal; landing a little over
+// it is noise. Two conditions must both hold before a row warns: the ratio
+// (projected use at the reset) and the absolute gap between the bar and the
+// tick, in percentage points. The gap matters early in a long window, where a
+// single whole percent of use swings the projection by twenty points or more:
+// 7% used eight hours into a week projects 147% while sitting 2 points past the
+// tick. Over 110% and 3 points is worth a look (yellow, no flame); over 130% and
+// 5 points, or over the line with under 10% left, runs out before the reset
+// (red, flame).
+const PACE_OVER_PERCENT = 110;
+const PACE_OVER_GAP = 3;
+const PACE_CRITICAL_PERCENT = 130;
+const PACE_CRITICAL_GAP = 5;
+const PACE_CRITICAL_LEFT = 10;
+
 /**
- * Bar color follows OpenUsage's pace verdict, not the current fill:
- * blue while ≥10% is projected to spare, yellow inside the last 10% with
- * at least 1% cushion, red when projected to run out (or already spent).
- * Without a pace signal, fall back to the host's fill-level severity.
+ * The row's verdict against the pace line: "calm" within the tolerance,
+ * "over" above it, "critical" when it runs out well before the reset or is
+ * nearly spent. Null without a projection.
+ * @returns {"calm"|"over"|"critical"|null}
  */
-export function meterColor(severity, pace, spent) {
+export function paceVerdict(pace, leftPercent) {
+  if (!pace || !pace.state) return null;
+  const projected = Number(pace.projectedPercent);
+  const left = Number(leftPercent);
+  // Points the bar sits past the tick: used minus the share of the window elapsed.
+  const gap = Number.isFinite(left) ? (100 - left) - Number(pace.elapsedPercent) : 0;
+  // Nearly spent and still over the line: the last few percent go fast.
+  if (projected > 100 && Number.isFinite(left) && left < PACE_CRITICAL_LEFT) return "critical";
+  if (projected > PACE_CRITICAL_PERCENT && gap >= PACE_CRITICAL_GAP) return "critical";
+  if (projected > PACE_OVER_PERCENT && gap >= PACE_OVER_GAP) return "over";
+  return "calm";
+}
+
+/**
+ * Bar color: the pace verdict when there is one (blue calm, yellow over, red
+ * critical), how much is left when there is not, red once spent. The same in
+ * Left and Used mode.
+ */
+export function meterColor(leftPercent, pace, spent) {
   if (spent) return "red";
-  if (pace && pace.state) {
-    if (pace.state === "behind") return "red";
-    if (pace.state === "onTrack") return pace.sparePercent >= 1 ? "yellow" : "red";
-    if (pace.state === "ahead") return "blue";
+  const verdict = paceVerdict(pace, leftPercent);
+  if (verdict === "critical") return "red";
+  if (verdict === "over") return "yellow";
+  if (verdict === "calm") return "blue";
+  const left = Number(leftPercent);
+  if (!Number.isFinite(left)) return "blue";
+  if (left < METER_RED_BELOW_LEFT) return "red";
+  if (left < METER_YELLOW_BELOW_LEFT) return "yellow";
+  return "blue";
+}
+
+/**
+ * The note beside a row's label. Only a critical row gets "Limit in …" (and the
+ * flame); an "over" row says by how much it is over the line; a calm row over
+ * 100% reads as no spare left rather than a run-out warning.
+ */
+export function paceNote(pace, leftPercent, nowMs, opts) {
+  const verdict = paceVerdict(pace, leftPercent);
+  if (verdict === null) return "";
+  if (verdict === "over") {
+    return m.percent_over_pace({ percent: Math.round(Number(pace.projectedPercent) - 100) }, { locale: lang(opts && opts.locale) });
   }
-  switch (severity) {
-    case "mid":
-    case "high":
-      return "yellow";
-    case "critical":
-      return "red";
-    default:
-      return "blue";
-  }
+  if (verdict === "calm" && pace.state === "behind") return paceText(Object.assign({}, pace, { state: "onTrack", sparePercent: 0 }), nowMs, opts);
+  return paceText(pace, nowMs, opts);
 }
 
 function dayKey(atMs, locale, timeZone) {
@@ -1462,17 +1511,25 @@ function joinError(explained) {
   return explained.title + ". " + explained.hint;
 }
 
+// A path in a diagnostic is the actionable part ("not found at <path>"), so it
+// stays; only the home prefix becomes `~`, which keeps the account name off the
+// card. Rewriting the prefix instead of cutting the path to the next space
+// matters: `Application Support` has one, and cutting there left
+// "Support/Cursor/…" behind on macOS and dropped the whole path on Windows.
+const HOME_PREFIX = /(?:[A-Za-z]:\\Users\\[^\\\s]+|\/(?:Users|home)\/[^/\s]+|\/root)(?=[\\/]|$|\s)/g;
+
 function shortenDiagnostic(raw, locale) {
   let text = String(raw || "")
     .replace(/credentials error:\s*/ig, "")
     .replace(/network transport error:\s*/ig, "")
     .replace(/schema mismatch:\s*/ig, "")
     .replace(/HTTP \d+:\s*/g, "")
-    .replace(/[A-Za-z]:\\[^\s]+/g, "")
-    .replace(/(?:\/home|\/Users|\/root|~)[^\s]*/g, "")
+    .replace(HOME_PREFIX, "~")
     .replace(/\s{2,}/g, " ")
     .trim();
   text = text.replace(/^[A-Za-z0-9. _-]+:\s+/, "");
+  // A bare path says where, never what went wrong: it is no diagnosis.
+  if (/^~[\\/]\S*$/.test(text)) text = "";
   if (text === "") return m.open_tui_for_details({}, { locale: lang(locale) });
   // The card wraps long hints, so keep the whole diagnosis; only a runaway
   // body (an HTML error page pasted into the message) is cut.

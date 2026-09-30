@@ -50,6 +50,7 @@ pub fn has_local_credentials(vendor: VendorId, config: &Config) -> bool {
         VendorId::Zai => key_present(config, vendor),
         VendorId::Openrouter => key_present(config, vendor),
         VendorId::Deepseek => key_present(config, vendor),
+        VendorId::Deepinfra => key_present(config, vendor),
         VendorId::Kimi => crate::kimi::resolve_auth(&config.kimi).is_ok(),
         VendorId::Kilo => key_present(config, vendor),
         VendorId::Novita => key_present(config, vendor),

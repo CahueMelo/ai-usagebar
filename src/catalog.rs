@@ -171,6 +171,7 @@ fn credential_present(cfg: &Config, id: VendorId, probes: &Probes) -> bool {
         | VendorId::Zai
         | VendorId::Openrouter
         | VendorId::Deepseek
+        | VendorId::Deepinfra
         | VendorId::Kilo
         | VendorId::Novita
         | VendorId::Moonshot
