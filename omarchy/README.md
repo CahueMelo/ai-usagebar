@@ -43,6 +43,8 @@ omarchy plugin remove akitaonrails.ai-usagebar
   mouse wheel switches provider. With **Show all providers** on the bar draws
   one chip per entry, and left-clicking a chip opens the panel on the entry
   that chip stands for (clicking the chip the panel already shows closes it).
+  While the panel is open the chips it is not showing dim to 45%, so the bar
+  says which entry the panel belongs to.
   The exact provider or named account is saved
   in the widget's inline `shell.json` settings and restored after shell reloads
   and sleep/unlock cycles. Right-click is not the settings shortcut.

@@ -172,6 +172,13 @@ BarWidget {
             x: chipHit.hitGaps.left
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(4)
+            // While the panel is open, the chips it is not showing step back.
+            opacity: root.opened && root.panelItem && modelData.id
+              && modelData.id !== root.panelItem.selectedEntryId ? 0.45 : 1
+
+            Behavior on opacity {
+              NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
 
             BrandMark {
               anchors.verticalCenter: parent.verticalCenter

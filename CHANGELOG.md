@@ -3364,6 +3364,14 @@ Each release is also published at
 - **Extracted duplicated tooltip helpers** (`Line`, `render_bordered`,
   `pad_*`) from 4 vendor files into a shared `src/tooltip.rs`
   (~70 LOC saved).
+- **The Omarchy bar dims the chips the open panel is not showing.** While the
+  panel is open, the chip for the entry it displays keeps its colour and the
+  others step back to 45% over 140 ms, so the bar says which entry the panel
+  belongs to, next to the shell's own underline under the widget. An alarming
+  chip that is not the selected one dims as well, so its red reads softer for as
+  long as the panel is open; the lone, vertical and loading placeholders never
+  dim, and the chip under the pointer, its click target and the tooltip are
+  untouched.
 
 ### Fixed
 

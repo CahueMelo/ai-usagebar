@@ -70,6 +70,12 @@ assert.match(barWidgetSource, /fixedWidth:\s*root\.bar\s*&&\s*root\.bar\.vertica
 assert.match(barWidgetSource, /height:\s*button\.height/);
 assert.match(barWidgetSource, /width:\s*chipContent\.implicitWidth\s*\+\s*hitGaps\.left\s*\+\s*hitGaps\.right/);
 assert.match(barWidgetSource, /x:\s*chipHit\.hitGaps\.left/);
+// While the panel is open the chips it is not showing step back, so the bar
+// says which entry the panel belongs to. The placeholders for a lone, vertical
+// or empty bar carry no id, so they never dim, and the click column above the
+// content keeps full opacity.
+assert.match(barWidgetSource, /opacity:\s*root\.opened\s*&&\s*root\.panelItem\s*&&\s*modelData\.id\s*\n\s*&&\s*modelData\.id\s*!==\s*root\.panelItem\.selectedEntryId\s*\?\s*0\.45\s*:\s*1/);
+assert.match(barWidgetSource, /Behavior on opacity\s*\{\s*\n\s*NumberAnimation\s*\{\s*duration:\s*140/);
 assert.match(barWidgetSource, /function\s+triggerPress\s*\(buttonCode\)/);
 assert.match(barWidgetSource, /root\.panelItem\.openEntry\(modelData\.id\s*\|\|\s*""\)/);
 assert.doesNotMatch(barWidgetSource, /\bIpcHandler\s*\{/);
