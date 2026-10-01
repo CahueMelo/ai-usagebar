@@ -23,6 +23,8 @@ The interface uses English by default and Portuguese when `LANG` or
 `LC_MESSAGES` starts with `pt`.
 Each provider header has a settings button that opens its configuration guidance
 and `config.toml`, plus a refresh button that reloads the shared usage report.
+The tray refreshes automatically every five minutes; shorter polling can rate-limit
+the Claude and Codex quota endpoints. Manual refresh is available from the panel.
 Bars follow the report's severity when no pacing data is available. With a
 reset time and window duration, blue means usage is projected to leave at
 least 10% spare, yellow means the projection is close to the limit, and red

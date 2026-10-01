@@ -35,15 +35,11 @@ Each release is also published at
   and the fetch already give, and the check now honors a configured
   `auth_paths` override.
 
-- **`vendors --json` no longer reports Command Code as configured just because
-  pi's shared keystore exists.** The catalog treated any file on Command Code's
-  auth search list as a login, but the second path is pi's keystore for every
-  provider the user signed pi into — so a machine with pi and no Command Code
-  login still showed the provider as having the credential it needs (and the
-  macOS preferences as "credential available"). Command Code is configured only
-  when one of those files holds its live credential, the same answer detection
-  and the fetch already give, and the check now honors a configured
-  `auth_paths` override.
+- **Cached quotas stay marked stale during HTTP 429 backoff.** An expired
+  payload served while requests are paused no longer appears fresh in the
+  report and desktop frontends.
+- **Linux Mint tray polls quota endpoints every five minutes.** The previous
+  one-minute interval could trigger Claude and Codex rate limits.
 
 ## [1.29.0] — 2026-09-30
 

@@ -554,8 +554,8 @@ class AIUsageTrayApp:
         # Initial fetch
         self.trigger_refresh()
 
-        # Auto refresh every 60 seconds
-        GLib.timeout_add_seconds(60, self.auto_refresh_tick)
+        # Claude and Codex quota endpoints rate-limit shorter polling intervals.
+        GLib.timeout_add_seconds(300, self.auto_refresh_tick)
 
     def build_menu(self, data=None):
         menu = Gtk.Menu()
