@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **Meta Muse (Muse Spark) evaluation and `[[custom]]` local-spend recipe.**
+  `docs/vendor-endpoints.md` records why Muse is not implementable as a native
+  vendor (Meta publishes no quota or billing endpoint; the dashboard's private
+  GraphQL route needs a browser session), and `config.example.toml` gains a
+  commented recipe that tallies Muse Code's local session logs through a
+  loopback `[[custom]]` provider.
+
 ## [1.29.0] — 2026-09-30
 
 ### Added
