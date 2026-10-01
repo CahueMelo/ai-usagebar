@@ -39,6 +39,16 @@ Each release is also published at
 
 ### Fixed
 
+- **Ollama Cloud monthly-only accounts no longer paint a fake 0% 5h/7d pair.**
+  Some Pro accounts report `limits.monthly` instead of `session`/`weekly`.
+  The TUI, tooltip and `usage --json` already showed that month; the widget
+  default format and the `{session_pct}`/`{weekly_pct}` aliases still emitted
+  `0` for the omitted windows, so Waybar and the macOS menu bar read as two
+  exhausted rate-limit windows. Absent windows are now empty placeholders (a
+  present month at 0% used still renders `0`), the default bar shows
+  `{oll_monthly_pct}%`, and the macOS selector draws that pool on the primary
+  bar as Monthly.
+
 - **GNOME: the top bar no longer goes blank when every window is hidden.** With
   both the 5h and weekly bars switched off, the indicator drew an empty label
   and left an invisible click target in the panel. It now shows the top-bar
