@@ -27,6 +27,16 @@ Each release is also published at
   dim, and the chip under the pointer, its click target and the tooltip are
   untouched.
 
+- **Omarchy can color-code usage by level.** The Quattro bar chips, panel meters,
+  and hover tooltip can paint green → yellow → orange → red as usage climbs,
+  reading those colours from the active Omarchy theme (`colors.toml`) with
+  Quattro's urgent colour for the critical rung. A new **Color-code usage by
+  level** display toggle (`colorCodeUsage`, off by default) turns the palette
+  on or off immediately; when it is off, everything stays on the normal
+  foreground colour and the classic alarm chrome (#278) still fires for a
+  critical quota. Theme key precedence matches Waybar/`theme.rs` after #289
+  (named `red`/`green`/`yellow` win over `color1`–`color3`).
+
 ### Fixed
 
 - **GNOME: the top bar no longer goes blank when every window is hidden.** With
@@ -49,6 +59,10 @@ Each release is also published at
   report and desktop frontends.
 - **Linux Mint tray polls quota endpoints every five minutes.** The previous
   one-minute interval could trigger Claude and Codex rate limits.
+- **Omarchy's open-panel underline spans the full chip width.** Quattro's bar
+  paints the active-plugin mark at ~55% of the slot unless the widget hints
+  otherwise; the AI Usage chip now reports its full width so the underline
+  tracks Cursor's multi-percentage label as indicators come and go.
 
 ## [1.29.0] — 2026-09-30
 

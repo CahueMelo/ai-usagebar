@@ -118,6 +118,16 @@ BarWidget {
     return sev === "critical" ? root.alarmColor(true) : button.foreground
   }
 
+  // Non-Cursor chip value with colour-coding on: the headline severity paints
+  // the label, so a critical bar value keeps its red. A chip without a
+  // severity keeps the plain foreground.
+  function chipValueColor(chip) {
+    var sev = chip && chip.severity ? String(chip.severity) : ""
+    if (sev !== "" && root.panelItem && typeof root.panelItem.severityColorOf === "function")
+      return root.panelItem.severityColorOf(sev)
+    return button.foreground
+  }
+
   function escapeHtml(value) {
     return String(value || "")
       .replace(/&/g, "&amp;")
@@ -409,7 +419,7 @@ BarWidget {
               textFormat: Text.PlainText
               text: chipHit.chip.label || ""
               color: root.colorCodeUsage
-                ? button.foreground
+                ? root.chipValueColor(chipHit.chip)
                 : root.alarmColor(!!chipHit.chip.alarming)
               font.family: button.fontFamily
               font.pixelSize: button.fontSize

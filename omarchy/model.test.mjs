@@ -157,7 +157,11 @@ assert.ok(
   syncSource.indexOf('for (var r = 0') < syncSource.indexOf('for (var i = 0'),
   'remembered-entry check precedes the current-selection early return'
 );
-assert.match(panelSource, /root\.entryAlarming\s*\?\s*root\.urgent/);
+// The panel brand mark colour-codes by the summary severity only when the
+// toggle is on; off, it keeps the classic binary foreground vs urgent when
+// the worst pool is critical.
+assert.match(panelSource, /foreground:\s*root\.colorCodeUsage\s*\n\s*\?\s*root\.severityColorOf\(root\.summary\.severity\s*\|\|\s*""\)/);
+assert.match(panelSource, /\(\(root\.summary\.severity\s*\|\|\s*""\)\s*===\s*"critical"\s*\n\s*\?\s*root\.urgent\s*:\s*root\.foreground\)/);
 assert.doesNotMatch(panelSource, /BrandMark[\s\S]*foreground:\s*root\.alarming\s*\?/m);
 const brandMarkSource = fs.readFileSync(new URL('./BrandMark.qml', import.meta.url), 'utf8');
 assert.match(brandMarkSource, /icons\/" \+ root\.brand/);

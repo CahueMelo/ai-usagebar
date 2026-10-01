@@ -608,32 +608,7 @@ Panel {
     return rowsFor(entry)
   }
 
-  function tooltipText() {
-    var rows = tooltipRows()
-    // Multi-severity Cursor tooltips use a custom colored bubble in BarWidget.
-    if (rows.length > 1) return ""
-    if (rows.length === 1 && rows[0].severity !== "" && isCursorEntry(entry) && !showAll)
-      return ""
-    if (rows.length === 1) return rows[0].text
-    if (showAll && visibleEntries.length > 0) {
-      // fallback if rows empty
-      return "AI usage"
-    }
-    if (!entry) return Model.autoTextSafe(statusMessage() || "AI usage")
-    return "AI usage"
-  }
-
-  function useRagTooltip() {
-    if (!colorCodeUsage) return false
-    var rows = tooltipRows()
-    if (rows.length > 1) return true
-    if (rows.length === 1 && rows[0].severity !== "" && (isCursorEntry(entry) || showAll))
-      return true
-    return false
-  }
-
   readonly property var ragTooltipRows: tooltipRows()
-  readonly property bool ragTooltipActive: useRagTooltip()
   readonly property string plainTooltipText: {
     var rows = ragTooltipRows
     if (rows.length > 0) {
