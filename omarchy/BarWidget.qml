@@ -107,15 +107,16 @@ BarWidget {
   // Icon tint:
   // - colour-coding on: full RAG from worst visible pool (max used / min
   //   remaining) — status highest-severity aggregate, never an average.
-  // - colour-coding off: same aggregate, binary white/foreground vs red.
+  // - colour-coding off: the chip's own alarm flag (highest percent across
+  //   windows), binary white/foreground vs red, as before the feature.
   function chipIconColor(chip) {
-    var sev = chip && chip.severity ? String(chip.severity) : ""
     if (root.colorCodeUsage) {
+      var sev = chip && chip.severity ? String(chip.severity) : ""
       if (root.panelItem && typeof root.panelItem.severityColorOf === "function")
         return root.panelItem.severityColorOf(sev)
       return button.foreground
     }
-    return sev === "critical" ? root.alarmColor(true) : button.foreground
+    return chip && chip.alarming ? root.alarmColor(true) : button.foreground
   }
 
   // Non-Cursor chip value with colour-coding on: the headline severity paints

@@ -3396,6 +3396,7 @@ Each release is also published at
 - **Extracted duplicated tooltip helpers** (`Line`, `render_bordered`,
   `pad_*`) from 4 vendor files into a shared `src/tooltip.rs`
   (~70 LOC saved).
+
 ### Fixed
 
 - **Live tests against real APIs continue to pass** — Z.AI's
