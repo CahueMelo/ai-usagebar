@@ -59,6 +59,15 @@ Each release is also published at
   report and desktop frontends.
 - **Linux Mint tray polls quota endpoints every five minutes.** The previous
   one-minute interval could trigger Claude and Codex rate limits.
+
+- **AUR `ai-usagebar-bin` installs again: the release signing key is now on a keyserver.**
+  The v1.29.0 key (`AE42EF5D73DD92E248815C95B65CCCAF64A99438`) was only shipped
+  as a release asset, so `makepkg`/`yay` could not fetch it for `validpgpkeys`
+  and the install aborted. The public key is now published to keys.openpgp.org
+  (served by fingerprint; a confirmation email makes it searchable by address).
+  The v1.29.0 release notes' `AA`→`CA` fingerprint typo is fixed in the release
+  body; the changelog's released [1.29.0] section keeps the original text
+  because released sections are immutable (#301).
 - **Omarchy's open-panel underline spans the full chip width.** Quattro's bar
   paints the active-plugin mark at ~55% of the slot unless the widget hints
   otherwise; the AI Usage chip now reports its full width so the underline
