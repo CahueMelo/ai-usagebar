@@ -484,6 +484,61 @@ function severityRank(severity) {
   return 0
 }
 
+// One Dark defaults — same hexes as src/theme.rs when colors.toml is missing.
+var ONE_DARK_PALETTE = {
+  green: "#98c379",
+  yellow: "#e5c07b",
+  orange: "#d19a66",
+  red: "#e06c75"
+}
+
+// Parse Omarchy theme/colors.toml keys used for RAG (Waybar Theme's source).
+// Named keys win over the older color1–3 aliases, matching theme.rs
+// merged_with_omarchy after #289 (red.or(color1), not last-occurrence-wins).
+// orange falls back to the resolved red when absent.
+function parseThemePalette(raw) {
+  var greenNamed = ""
+  var greenAlias = ""
+  var yellowNamed = ""
+  var yellowAlias = ""
+  var orangeNamed = ""
+  var redNamed = ""
+  var redAlias = ""
+  var lines = String(raw || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})/)
+    if (!match) continue
+    var key = match[1]
+    var hex = match[2]
+    if (key === "green") greenNamed = hex
+    else if (key === "color2") greenAlias = hex
+    else if (key === "yellow") yellowNamed = hex
+    else if (key === "color3") yellowAlias = hex
+    else if (key === "orange") orangeNamed = hex
+    else if (key === "red") redNamed = hex
+    else if (key === "color1") redAlias = hex
+  }
+  var red = redNamed || redAlias
+  var green = greenNamed || greenAlias
+  var yellow = yellowNamed || yellowAlias
+  var orange = orangeNamed || red
+  return {
+    green: green || ONE_DARK_PALETTE.green,
+    yellow: yellow || ONE_DARK_PALETTE.yellow,
+    orange: orange || ONE_DARK_PALETTE.orange,
+    red: red || ONE_DARK_PALETTE.red
+  }
+}
+
+function severityColor(severity, palette) {
+  var p = palette || ONE_DARK_PALETTE
+  if (severity === "critical") return p.red
+  if (severity === "high") return p.orange
+  if (severity === "mid") return p.yellow
+  if (severity === "low") return p.green
+  return p.green
+}
+
 // Older reports print On-Demand as "$0.00 / $5.00" and nothing else. A
 // current report carries used_cents, limit_cents, and percent, which win.
 // This parser stays for a binary that predates those fields.
@@ -699,17 +754,34 @@ function cursorDualHeadline(entry, flags) {
   }
   var texts = []
   var lines = []
+  var segments = []
+  var tooltipRows = []
   for (var n = 0; n < parts.length; n++) {
     texts.push(parts[n].text)
     lines.push(parts[n].line)
+    if (n > 0) segments.push({ text: " · ", severity: "" })
+    segments.push({ text: parts[n].text, severity: parts[n].severity })
+    tooltipRows.push({ text: parts[n].line, severity: parts[n].severity })
   }
   var text = texts.join(" · ")
   var tooltip = lines.join("\n")
+  var allCritical = parts.length > 0
+  for (var c = 0; c < parts.length; c++) {
+    if (parts[c].severity !== "critical") {
+      allCritical = false
+      break
+    }
+  }
   return {
     text: text,
     tooltip: tooltip,
+    segments: segments,
+    tooltipRows: tooltipRows,
     percent: worse.percent,
     severity: worse.severity,
+    // Icon / button chrome: only when every visible pool is critical, so a
+    // single exhausted pool does not paint the brand mark while siblings are fine.
+    allCritical: allCritical,
     label: "Cursor Models · Other Models"
   }
 }

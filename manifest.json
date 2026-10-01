@@ -30,6 +30,7 @@
       "showValue": true,
       "showProvider": false,
       "showAll": false,
+      "colorCodeUsage": false,
       "barWindow": "auto",
       "showCursorModels": true,
       "showCursorOther": true,
@@ -71,6 +72,13 @@
         "type": "boolean",
         "label": "Show all providers",
         "description": "Show every configured provider's icon and usage in the top bar at once, instead of cycling one at a time. Off by default.",
+        "defaultValue": false
+      },
+      {
+        "key": "colorCodeUsage",
+        "type": "boolean",
+        "label": "Color-code usage by level",
+        "description": "Paint bar values, panel meters, and the tooltip green → yellow → orange → red as usage climbs, using your Omarchy theme. Turn off for a single foreground color. Off by default.",
         "defaultValue": false
       },
       {

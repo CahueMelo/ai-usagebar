@@ -27,6 +27,10 @@ assert.equal(manifest.barWidget.defaults.showAll, false);
 const showAllSchema = manifest.barWidget.schema.find(row => row.key === 'showAll');
 assert.equal(showAllSchema.type, 'boolean');
 assert.equal(showAllSchema.defaultValue, false);
+assert.equal(manifest.barWidget.defaults.colorCodeUsage, false);
+const colorCodeUsageSchema = manifest.barWidget.schema.find(row => row.key === 'colorCodeUsage');
+assert.equal(colorCodeUsageSchema.type, 'boolean');
+assert.equal(colorCodeUsageSchema.defaultValue, false);
 // Pinned window is opt-in display-only: existing shell.json entries without
 // the key keep the historical highest-percent label.
 assert.equal(manifest.barWidget.defaults.barWindow, 'auto');
@@ -77,7 +81,10 @@ assert.match(barWidgetSource, /x:\s*chipHit\.hitGaps\.left/);
 assert.match(barWidgetSource, /opacity:\s*root\.opened\s*&&\s*root\.panelItem\s*&&\s*modelData\.id\s*\n\s*&&\s*modelData\.id\s*!==\s*root\.panelItem\.selectedEntryId\s*\?\s*0\.45\s*:\s*1/);
 assert.match(barWidgetSource, /Behavior on opacity\s*\{\s*\n\s*NumberAnimation\s*\{\s*duration:\s*140/);
 assert.match(barWidgetSource, /function\s+triggerPress\s*\(buttonCode\)/);
-assert.match(barWidgetSource, /root\.panelItem\.openEntry\(modelData\.id\s*\|\|\s*""\)/);
+assert.match(barWidgetSource, /root\.panelItem\.openEntry\(chipHit\.chip\.id\s*\|\|\s*""\)/);
+// Classic alarm chrome when colour-coding is off; RAG colours replace it when on.
+assert.match(barWidgetSource, /active:\s*!root\.colorCodeUsage\s*&&\s*root\.alarming/);
+assert.match(barWidgetSource, /text:\s*root\.alarming\s*\?\s*"󰅙"\s*:\s*"󰚩"/);
 assert.doesNotMatch(barWidgetSource, /\bIpcHandler\s*\{/);
 
 const panelSource = fs.readFileSync(new URL('./Panel.qml', import.meta.url), 'utf8');
@@ -92,6 +99,7 @@ assert.match(panelSource, /setting\("lastSelectedEntryId",\s*""\)/);
 assert.match(panelSource, /setting\("showValue",\s*true\)/);
 assert.match(panelSource, /setting\("showProvider",\s*false\)/);
 assert.match(panelSource, /setting\("showAll",\s*false\)/);
+assert.match(panelSource, /setting\("colorCodeUsage",\s*false\)/);
 assert.match(panelSource, /Model\.normalizeBarWindow\(setting\("barWindow",\s*"auto"\)\)/);
 // The pin covers the bar value and its echoes (hero detail, tooltip):
 // summary (bar label/chips) is pinned, while panel rows keep every pool.
@@ -149,7 +157,7 @@ assert.ok(
   syncSource.indexOf('for (var r = 0') < syncSource.indexOf('for (var i = 0'),
   'remembered-entry check precedes the current-selection early return'
 );
-assert.match(panelSource, /foreground:\s*root\.entryAlarming\s*\?\s*root\.urgent/);
+assert.match(panelSource, /root\.entryAlarming\s*\?\s*root\.urgent/);
 assert.doesNotMatch(panelSource, /BrandMark[\s\S]*foreground:\s*root\.alarming\s*\?/m);
 const brandMarkSource = fs.readFileSync(new URL('./BrandMark.qml', import.meta.url), 'utf8');
 assert.match(brandMarkSource, /icons\/" \+ root\.brand/);
@@ -185,6 +193,8 @@ assert.match(settingsViewSource, /signal\s+showProviderRequested\(bool\s+enabled
 assert.match(settingsViewSource, /label:\s*"Show provider name in the top bar"/);
 assert.match(settingsViewSource, /signal\s+showAllRequested\(bool\s+enabled\)/);
 assert.match(settingsViewSource, /label:\s*"Show all providers in the top bar"/);
+assert.match(settingsViewSource, /signal\s+colorCodeUsageRequested\(bool\s+enabled\)/);
+assert.match(settingsViewSource, /label:\s*"Color-code usage by level"/);
 assert.match(settingsViewSource, /signal\s+barWindowRequested\(string\s+value\)/);
 assert.match(settingsViewSource, /text:\s*"TOP BAR WINDOW"/);
 assert.match(settingsViewSource, /\{\s*value:\s*"auto",\s*label:\s*"Highest \(auto\)"/);
@@ -482,6 +492,43 @@ assert.equal(model.formatReset(localReset(2026, 9, 5, 14, 0), at(2026, 8, 14, 12
 assert.equal(model.formatReset('2026-08-14T12:00:00Z', Date.parse('2026-08-14T12:00:00Z')), 'Reset due');
 assert.equal(model.formatReset('', Date.parse('2026-08-14T12:00:00Z')), '');
 assert.equal(model.formatReset('not-a-date', Date.parse('2026-08-14T12:00:00Z')), '');
+
+// Theme palette: named Omarchy keys win over color1–3 aliases (#289 / #292).
+const namedWins = model.parseThemePalette([
+  'color1 = "#111111"',
+  'red = "#f7768e"',
+  'color2 = "#222222"',
+  'green = "#9ece6a"',
+  'color3 = "#333333"',
+  'yellow = "#e0af68"',
+  'orange = "#eb927b"',
+].join('\n'));
+assert.equal(namedWins.red, '#f7768e');
+assert.equal(namedWins.green, '#9ece6a');
+assert.equal(namedWins.yellow, '#e0af68');
+assert.equal(namedWins.orange, '#eb927b');
+const aliasOnly = model.parseThemePalette([
+  'color1 = "#aa1111"',
+  'color2 = "#11aa11"',
+  'color3 = "#1111aa"',
+].join('\n'));
+assert.equal(aliasOnly.red, '#aa1111');
+assert.equal(aliasOnly.green, '#11aa11');
+assert.equal(aliasOnly.yellow, '#1111aa');
+assert.equal(aliasOnly.orange, '#aa1111'); // orange falls back to resolved red
+const reversedOrder = model.parseThemePalette([
+  'red = "#f7768e"',
+  'color1 = "#111111"',
+].join('\n'));
+assert.equal(reversedOrder.red, '#f7768e');
+
+// severityColor maps the report contract onto the theme palette.
+const palette = { green: '#g', yellow: '#y', orange: '#o', red: '#r' };
+assert.equal(model.severityColor('low', palette), '#g');
+assert.equal(model.severityColor('mid', palette), '#y');
+assert.equal(model.severityColor('high', palette), '#o');
+assert.equal(model.severityColor('critical', palette), '#r');
+assert.equal(model.severityColor('', palette), '#g');
 assert.equal(model.formatUpdated('2026-08-14T12:00:00Z', Date.parse('2026-08-14T12:03:00Z')), 'Updated 3m ago');
 assert.equal(model.metricDetail(parsed.entries[0].sections[1]), '60% elapsed · 31pts under');
 
