@@ -18,6 +18,13 @@ Each release is also published at
   commented recipe that tallies Muse Code's local session logs through a
   loopback `[[custom]]` provider.
 
+### Fixed
+
+- **GNOME: the top bar no longer goes blank when every window is hidden.** With
+  both the 5h and weekly bars switched off, the indicator drew an empty label
+  and left an invisible click target in the panel. It now shows the top-bar
+  vendor's symbolic icon instead, and the click menu works as before.
+
 ## [1.29.0] — 2026-09-30
 
 ### Added

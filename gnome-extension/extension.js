@@ -135,13 +135,23 @@ class AiUsageBarIndicator extends PanelMenu.Button {
         this._panelJob = newJob();
         this._reportJob = newJob();
 
-        // Panel: one markup label holds tags + percentages + bars.
+        // Panel: one markup label holds tags + percentages + bars. The icon
+        // stands in when the settings leave nothing for the label to draw,
+        // so the indicator never collapses into an empty click target.
         this._label = new St.Label({
             text: '5h …',
             y_align: Clutter.ActorAlign.CENTER,
             style_class: 'aiub-label',
         });
-        this.add_child(this._label);
+        this._icon = new St.Icon({
+            style_class: 'system-status-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        const panelBox = new St.BoxLayout({style_class: 'panel-status-menu-box'});
+        panelBox.add_child(this._icon);
+        panelBox.add_child(this._label);
+        this.add_child(panelBox);
 
         this._buildMenu();
 
@@ -550,7 +560,7 @@ class AiUsageBarIndicator extends PanelMenu.Button {
         if (f.length <= FIELD.extraLimit) {
             // Loading… / ⚠ — show the binary's own text.
             this._data = null;
-            this._label.clutter_text.set_markup(`<span foreground="${FG}">${esc(raw) || '…'}</span>`);
+            this._setPanelMarkup(`<span foreground="${FG}">${esc(raw) || '…'}</span>`);
             return;
         }
         // Only what the top bar draws. The click menu reads `usage --json`.
@@ -640,7 +650,23 @@ class AiUsageBarIndicator extends PanelMenu.Button {
         }
 
         const gap = `<span foreground="${DIM}">   </span>`;
-        this._label.clutter_text.set_markup(parts.join(gap) || ' ');
+        this._setPanelMarkup(parts.join(gap));
+    }
+
+    // Every top-bar write goes through here. Empty markup, e.g. both windows
+    // switched off, swaps the label for the top-bar vendor's mark.
+    _setPanelMarkup(markup) {
+        const empty = !markup;
+        if (empty) {
+            const mark = this._markIcon(this._settings.get_string('vendor'));
+            if (mark)
+                this._icon.gicon = mark;
+            else
+                this._icon.icon_name = 'application-x-executable-symbolic';
+        }
+        this._icon.visible = empty;
+        this._label.visible = !empty;
+        this._label.clutter_text.set_markup(markup);
     }
 
     // The pools the panel should draw, tagged and in display order. Primary is
@@ -668,7 +694,7 @@ class AiUsageBarIndicator extends PanelMenu.Button {
     _setError(short, detail) {
         this._data = null;
         // The top bar stays a compact ⚠; the reason is the menu's first line.
-        this._label.clutter_text.set_markup(`<span foreground="${RED}">⚠ ai</span>`);
+        this._setPanelMarkup(`<span foreground="${RED}">⚠ ai</span>`);
         this._panelError = errorLine(short, detail);
         this._paintReport(this._report);
     }
