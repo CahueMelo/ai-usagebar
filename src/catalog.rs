@@ -121,17 +121,17 @@ fn credential_present(cfg: &Config, id: VendorId, probes: &Probes) -> bool {
     if cfg.inline_api_key(id).is_some() {
         return true;
     }
-    if let Some(accounts) = cfg.api_key_accounts(id) {
-        if accounts.iter().any(|account| {
+    if cfg.api_key_accounts(id).is_some_and(|accounts| {
+        accounts.iter().any(|account| {
             account
                 .api_key_env
                 .as_deref()
                 .filter(|name| !name.is_empty())
                 .is_some_and(|name| (probes.env_set)(name))
                 || account.api_key.as_deref().is_some_and(|k| !k.is_empty())
-        }) {
-            return true;
-        }
+        })
+    }) {
+        return true;
     }
     match id {
         // A Keychain-only login is what Claude Code leaves on macOS when no
