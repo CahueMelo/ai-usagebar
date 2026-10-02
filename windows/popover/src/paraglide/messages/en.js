@@ -56,6 +56,7 @@
 /** @typedef {{}} Couldnt_Check_For_Updates_TitleInputs */
 /** @typedef {{}} Couldnt_Update_TitleInputs */
 /** @typedef {{}} CountdownInputs */
+/** @typedef {{}} Credit_BalanceInputs */
 /** @typedef {{}} CreditsInputs */
 /** @typedef {{}} Current_UsageInputs */
 /** @typedef {{}} CustomizeInputs */
@@ -80,6 +81,7 @@
 /** @typedef {{}} ExpiredInputs */
 /** @typedef {{}} Extra_UsageInputs */
 /** @typedef {{}} For_Menu_BarInputs */
+/** @typedef {{}} Free_TierInputs */
 /** @typedef {{}} GeneralInputs */
 /** @typedef {{}} Global_ShortcutInputs */
 /** @typedef {{}} Global_Shortcut_HintInputs */
@@ -150,6 +152,7 @@
 /** @typedef {{}} OptionsInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Pace_By_ResetInputs */
 /** @typedef {{ duration: NonNullable<unknown> }} Pace_Shows_After_FirstInputs */
+/** @typedef {{}} Paid_TierInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_LeftInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Left_At_ResetInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Over_PaceInputs */
@@ -168,6 +171,7 @@
 /** @typedef {{}} Quota_Alerts_HintInputs */
 /** @typedef {{}} Rate_Limit_ResetsInputs */
 /** @typedef {{ version: NonNullable<unknown> }} Ready_To_InstallInputs */
+/** @typedef {{}} Recent_ModelsInputs */
 /** @typedef {{}} RefreshInputs */
 /** @typedef {{}} Refresh_EveryInputs */
 /** @typedef {{}} Refresh_Interval_HintInputs */
@@ -209,6 +213,7 @@
 /** @typedef {{}} SystemInputs */
 /** @typedef {{}} ThemeInputs */
 /** @typedef {{}} This_BuildInputs */
+/** @typedef {{}} TierInputs */
 /** @typedef {{}} Time_FormatInputs */
 /** @typedef {{}} Time_Format_HintInputs */
 /** @typedef {{ time: NonNullable<unknown> }} Today_AtInputs */
@@ -240,6 +245,7 @@
 /** @typedef {{}} Usage_And_Balance_HeadingInputs */
 /** @typedef {{}} Usage_And_Balance_SubtitleInputs */
 /** @typedef {{}} Usage_And_Balance_TitleInputs */
+/** @typedef {{}} Usage_By_PeriodInputs */
 /** @typedef {{}} Usage_DisplayInputs */
 /** @typedef {{}} Usage_GoalInputs */
 /** @typedef {{}} Usage_Goal_HintInputs */
@@ -482,6 +488,10 @@ export const countdown = /** @type {(inputs: CountdownInputs) => LocalizedString
 	return /** @type {LocalizedString} */ (`Countdown`)
 };
 
+export const credit_balance = /** @type {(inputs: Credit_BalanceInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`Credit balance`)
+};
+
 export const credits = /** @type {(inputs: CreditsInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`Credits`)
 };
@@ -576,6 +586,10 @@ export const extra_usage = /** @type {(inputs: Extra_UsageInputs) => LocalizedSt
 
 export const for_menu_bar = /** @type {(inputs: For_Menu_BarInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`for menu bar`)
+};
+
+export const free_tier = /** @type {(inputs: Free_TierInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`Free tier`)
 };
 
 export const general = /** @type {(inputs: GeneralInputs) => LocalizedString} */ () => {
@@ -858,6 +872,10 @@ export const pace_shows_after_first = /** @type {(inputs: Pace_Shows_After_First
 	return /** @type {LocalizedString} */ (`The pace shows after the first ${i?.duration} of each window.`)
 };
 
+export const paid_tier = /** @type {(inputs: Paid_TierInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`Paid tier`)
+};
+
 export const percent_left = /** @type {(inputs: Percent_LeftInputs) => LocalizedString} */ (i) => {
 	return /** @type {LocalizedString} */ (`${i?.percent}% left`)
 };
@@ -928,6 +946,10 @@ export const rate_limit_resets = /** @type {(inputs: Rate_Limit_ResetsInputs) =>
 
 export const ready_to_install = /** @type {(inputs: Ready_To_InstallInputs) => LocalizedString} */ (i) => {
 	return /** @type {LocalizedString} */ (`AI Usage ${i?.version} is ready to install.`)
+};
+
+export const recent_models = /** @type {(inputs: Recent_ModelsInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`Recent models`)
 };
 
 export const refresh = /** @type {(inputs: RefreshInputs) => LocalizedString} */ () => {
@@ -1094,6 +1116,10 @@ export const this_build = /** @type {(inputs: This_BuildInputs) => LocalizedStri
 	return /** @type {LocalizedString} */ (`This build`)
 };
 
+export const tier = /** @type {(inputs: TierInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`Tier`)
+};
+
 export const time_format = /** @type {(inputs: Time_FormatInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`Time Format`)
 };
@@ -1216,6 +1242,10 @@ export const usage_and_balance_subtitle = /** @type {(inputs: Usage_And_Balance_
 
 export const usage_and_balance_title = /** @type {(inputs: Usage_And_Balance_TitleInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`Usage & Balance`)
+};
+
+export const usage_by_period = /** @type {(inputs: Usage_By_PeriodInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`Usage by period`)
 };
 
 export const usage_display = /** @type {(inputs: Usage_DisplayInputs) => LocalizedString} */ () => {

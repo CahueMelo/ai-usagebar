@@ -1000,6 +1000,13 @@ fn openrouter_sections(
             "paid tier".into()
         }],
     });
+    if !s.recent_models.is_empty() {
+        v.push(Section::Spacer);
+        v.push(Section::Block {
+            label: "Recent models".into(),
+            body: s.recent_models.clone(),
+        });
+    }
     v
 }
 
@@ -2439,6 +2446,7 @@ mod tests {
             is_free_tier: false,
             limit: None,
             limit_remaining: None,
+            recent_models: Vec::new(),
         };
         let sections = sections_for(&ready(VendorSnapshot::Openrouter(snap)), now(), 5);
         assert!(matches!(sections[0], Section::Title { .. }));
@@ -2469,6 +2477,7 @@ mod tests {
             is_free_tier: false,
             limit: None,
             limit_remaining: None,
+            recent_models: Vec::new(),
         };
         let sections = sections_for(&ready(VendorSnapshot::Openrouter(snap.clone())), now(), 5);
         let metric = sections
@@ -3888,6 +3897,7 @@ mod tests {
             is_free_tier: false,
             limit: None,
             limit_remaining: None,
+            recent_models: Vec::new(),
         });
         // A wildly different tank size changes nothing: 25 of 100 is 25%.
         // `[openrouter]` carries no `display_limit`, so this can only arrive
@@ -3916,6 +3926,7 @@ mod tests {
             is_free_tier: false,
             limit: None,
             limit_remaining: None,
+            recent_models: Vec::new(),
         });
         let sections = sections_with_metadata_for(
             &ready_with(
@@ -3955,6 +3966,7 @@ mod tests {
             is_free_tier: true,
             limit: None,
             limit_remaining: None,
+            recent_models: Vec::new(),
         });
         for prefs in [
             DisplayPrefs::default(),
@@ -3989,6 +4001,7 @@ mod tests {
             is_free_tier: false,
             limit: Some(50.0),
             limit_remaining: Some(50.0),
+            recent_models: Vec::new(),
         });
         let prefs = DisplayPrefs::balance(Some(200.0), crate::balance::Headline::Percent);
         let sections = sections_with_metadata_for(&ready_with(snapshot, prefs), now(), 5);
