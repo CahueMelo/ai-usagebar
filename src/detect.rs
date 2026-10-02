@@ -47,11 +47,9 @@ pub fn has_local_credentials(vendor: VendorId, config: &Config) -> bool {
                 .openai
                 .resolve_auth_path(None)
                 .is_ok_and(|path| crate::openai::creds::read_from(&path).is_ok())
-                || config
-                    .openai
-                    .accounts
-                    .iter()
-                    .any(|account| crate::openai::creds::read_from(&account.codex_auth_path).is_ok())
+                || config.openai.accounts.iter().any(|account| {
+                    crate::openai::creds::read_from(&account.codex_auth_path).is_ok()
+                })
         }
         VendorId::Copilot => copilot_present(),
         VendorId::Zai => key_present(config, vendor),
@@ -603,10 +601,13 @@ mod tests {
         config.anthropic.credentials_path = Some(dir.path().join("absent.json"));
         assert!(!anthropic_present(&config));
 
-        config.anthropic.accounts.push(crate::config::AnthropicAccount {
-            label: "work".into(),
-            credentials_path: creds_file,
-        });
+        config
+            .anthropic
+            .accounts
+            .push(crate::config::AnthropicAccount {
+                label: "work".into(),
+                credentials_path: creds_file,
+            });
         assert!(anthropic_present(&config));
     }
 

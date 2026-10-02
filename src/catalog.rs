@@ -449,10 +449,12 @@ mod tests {
     fn an_anthropic_named_account_counts_as_configured() {
         let mut cfg = Config::default();
         let custom = PathBuf::from("/accounts/work/.credentials.json");
-        cfg.anthropic.accounts.push(crate::config::AnthropicAccount {
-            label: "work".into(),
-            credentials_path: custom.clone(),
-        });
+        cfg.anthropic
+            .accounts
+            .push(crate::config::AnthropicAccount {
+                label: "work".into(),
+                credentials_path: custom.clone(),
+            });
         let exists = |path: &Path| path == custom;
         let rows = statuses_with(&cfg, &probes(&|_| false, &exists, &|_| false));
         assert!(row(&rows, "anthropic").configured);
