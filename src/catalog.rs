@@ -121,15 +121,42 @@ fn credential_present(cfg: &Config, id: VendorId, probes: &Probes) -> bool {
     if cfg.inline_api_key(id).is_some() {
         return true;
     }
+    if let Some(accounts) = cfg.api_key_accounts(id) {
+        if accounts.iter().any(|account| {
+            account
+                .api_key_env
+                .as_deref()
+                .filter(|name| !name.is_empty())
+                .is_some_and(|name| (probes.env_set)(name))
+                || account.api_key.as_deref().is_some_and(|k| !k.is_empty())
+        }) {
+            return true;
+        }
+    }
     match id {
         // A Keychain-only login is what Claude Code leaves on macOS when no
         // `.credentials.json` was written, so the file alone would report a
         // signed-in user as unconfigured.
         VendorId::Anthropic => {
-            any_exists(probes, [crate::anthropic::creds::default_path()])
-                || (probes.keychain_has_claude)()
+            let default_or_explicit = any_exists(probes, [anthropic_credentials_path(cfg)]);
+            let keychain =
+                cfg.anthropic.credentials_path.is_none() && (probes.keychain_has_claude)();
+            default_or_explicit
+                || keychain
+                || cfg
+                    .anthropic
+                    .all_accounts()
+                    .iter()
+                    .any(|account| (probes.exists)(&account.credentials_path))
         }
-        VendorId::Openai => any_exists(probes, [crate::openai::creds::default_path()]),
+        VendorId::Openai => {
+            any_exists(probes, [cfg.openai.resolve_auth_path(None)])
+                || cfg
+                    .openai
+                    .accounts
+                    .iter()
+                    .any(|account| (probes.exists)(&account.codex_auth_path))
+        }
         VendorId::Copilot => {
             any_exists(probes, [crate::copilot::credentials::default_hosts_path()])
         }
@@ -193,6 +220,13 @@ fn credential_present(cfg: &Config, id: VendorId, probes: &Probes) -> bool {
         | VendorId::OpenCodeGo
         | VendorId::Ollama
         | VendorId::OrcaRouter => false,
+    }
+}
+
+fn anthropic_credentials_path(cfg: &Config) -> crate::error::Result<PathBuf> {
+    match &cfg.anthropic.credentials_path {
+        Some(path) => Ok(path.clone()),
+        None => crate::anthropic::creds::default_path(),
     }
 }
 
@@ -345,6 +379,33 @@ mod tests {
         assert!(!row(&rows, "zai").configured);
     }
 
+    #[test]
+    fn a_named_api_key_account_counts_as_configured() {
+        let mut cfg = Config::default();
+        cfg.openrouter.accounts.push(crate::config::ApiKeyAccount {
+            label: "work".into(),
+            api_key_env: None,
+            api_key: Some("sk-named".into()),
+        });
+        let rows = statuses_with(&cfg, &bare());
+        assert!(row(&rows, "openrouter").configured);
+        assert!(!row(&rows, "deepseek").configured);
+    }
+
+    #[test]
+    fn a_named_api_key_account_with_env_counts_as_configured() {
+        let mut cfg = Config::default();
+        cfg.deepseek.accounts.push(crate::config::ApiKeyAccount {
+            label: "work".into(),
+            api_key_env: Some("DEEPSEEK_WORK_API_KEY".into()),
+            api_key: None,
+        });
+        let set = |name: &str| name == "DEEPSEEK_WORK_API_KEY";
+        let rows = statuses_with(&cfg, &probes(&set, &|_| false, &|_| false));
+        assert!(row(&rows, "deepseek").configured);
+        assert!(!row(&rows, "zai").configured);
+    }
+
     /// Antigravity has no credential of any kind — the binary probes whichever
     /// local product is running — so a frontend must not draw it as missing
     /// one, and must not offer to fix it.
@@ -375,12 +436,58 @@ mod tests {
     }
 
     #[test]
+    fn an_anthropic_credentials_path_override_counts_as_configured() {
+        let mut cfg = Config::default();
+        let custom = PathBuf::from("/custom/anthropic/.credentials.json");
+        cfg.anthropic.credentials_path = Some(custom.clone());
+        let exists = |path: &Path| path == custom;
+        let rows = statuses_with(&cfg, &probes(&|_| false, &exists, &|_| false));
+        assert!(row(&rows, "anthropic").configured);
+    }
+
+    #[test]
+    fn an_anthropic_named_account_counts_as_configured() {
+        let mut cfg = Config::default();
+        let custom = PathBuf::from("/accounts/work/.credentials.json");
+        cfg.anthropic.accounts.push(crate::config::AnthropicAccount {
+            label: "work".into(),
+            credentials_path: custom.clone(),
+        });
+        let exists = |path: &Path| path == custom;
+        let rows = statuses_with(&cfg, &probes(&|_| false, &exists, &|_| false));
+        assert!(row(&rows, "anthropic").configured);
+    }
+
+    #[test]
     fn an_oauth_provider_with_no_artifact_names_the_command_that_fixes_it() {
         let rows = statuses_with(&Config::default(), &bare());
         let codex = row(&rows, "openai");
         assert_eq!(codex.kind, AuthKind::Oauth);
         assert!(!codex.configured);
         assert_eq!(codex.login, "codex login");
+    }
+
+    #[test]
+    fn an_openai_codex_auth_path_override_counts_as_configured() {
+        let mut cfg = Config::default();
+        let custom = PathBuf::from("/custom/openai/auth.json");
+        cfg.openai.codex_auth_path = Some(custom.clone());
+        let exists = |path: &Path| path == custom;
+        let rows = statuses_with(&cfg, &probes(&|_| false, &exists, &|_| false));
+        assert!(row(&rows, "openai").configured);
+    }
+
+    #[test]
+    fn an_openai_named_account_counts_as_configured() {
+        let mut cfg = Config::default();
+        let custom = PathBuf::from("/accounts/work/auth.json");
+        cfg.openai.accounts.push(crate::config::OpenAiAccount {
+            label: "work".into(),
+            codex_auth_path: custom.clone(),
+        });
+        let exists = |path: &Path| path == custom;
+        let rows = statuses_with(&cfg, &probes(&|_| false, &exists, &|_| false));
+        assert!(row(&rows, "openai").configured);
     }
 
     /// A provider is only ever fetched when config has it on, and `enabled` is
