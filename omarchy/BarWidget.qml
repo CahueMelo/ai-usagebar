@@ -148,7 +148,9 @@ BarWidget {
     }
     if (root.panelItem && root.panelItem.plainTooltipText)
       return root.panelItem.plainTooltipText
-    return "AI usage"
+    return root.panelItem && root.panelItem.tr
+      ? root.panelItem.tr("app.name")
+      : "AI usage"
   }
 
   readonly property string tipHtml: {

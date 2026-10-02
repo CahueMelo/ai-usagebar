@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "I18n.js" as I18n
 
 // Native Quattro settings form. Rust remains the sole config owner: this view
 // receives only non-secret key-presence metadata and sends changed keys over
@@ -18,6 +19,8 @@ Column {
   property bool showProvider: false
   property bool showAll: false
   property bool colorCodeUsage: false
+  property string uiLocale: "en"
+  property string uiLocaleSetting: "auto"
   property string barWindow: "auto"
   readonly property color dim: Qt.darker(foreground, 1.45)
 
@@ -50,6 +53,7 @@ Column {
   signal showProviderRequested(bool enabled)
   signal showAllRequested(bool enabled)
   signal colorCodeUsageRequested(bool enabled)
+  signal uiLocaleRequested(string value)
   signal barWindowRequested(string value)
   signal closeRequested()
 
@@ -58,6 +62,7 @@ Column {
   Keys.onEscapePressed: closeRequested()
 
   function safe(value) { return Model.autoTextSafe(value) }
+  function tr(key, params) { return I18n.t(uiLocale, key, params || null) }
 
   function load() {
     if (stateProcess.running || applyProcess.running) return
@@ -76,7 +81,7 @@ Column {
     if (stateExitCode !== 0) {
       var detail = Model.errorMessage(stateStderr)
       errorText = detail.indexOf("unrecognized subcommand") >= 0
-        ? "This installed ai-usagebar binary predates native settings. Update the package, or use the terminal settings fallback."
+        ? root.tr("error.binary_old")
         : detail
       snapshot = ({ primary_choices: [], keys: [], vendors: [] })
       selectedPrimary = ""
@@ -170,14 +175,14 @@ Column {
     // in this long-lived shell, even if the save failed.
     scrubSecrets()
     if (applyExitCode !== 0 || !Model.parseSettingsApplyResult(applyStdout)) {
-      errorText = Model.errorMessage(applyStderr || "The settings command did not confirm the save.")
+      errorText = Model.errorMessage(applyStderr || root.tr("error.apply"))
       return
     }
     saved()
     load()
     // load() clears stale status before refreshing the snapshot, so set the
     // confirmation afterwards and keep it visible while the refresh runs.
-    statusText = "Settings saved. Usage is refreshing."
+    statusText = root.tr("status.saved")
   }
 
   onVisibleChanged: {
@@ -237,13 +242,13 @@ Column {
     spacing: Style.space(8)
 
     PanelSectionHeader {
-      text: "SETTINGS"
+      text: root.tr("section.settings")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Text {
       width: parent.width
-      text: "Loading configuration…"
+      text: root.tr("loading.config")
       color: root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
@@ -257,14 +262,14 @@ Column {
     spacing: Style.space(8)
 
     PanelSectionHeader {
-      text: "DISPLAY"
+      text: root.tr("section.display")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Toggle {
       width: parent.width
-      label: "Show usage value in the top bar"
-      description: "Turn this off for an icon-only bar entry. The panel and tooltip still show full usage details. Applies immediately."
+      label: root.tr("toggle.show_value")
+      description: root.tr("toggle.show_value_desc")
       checked: root.showValue
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -273,8 +278,8 @@ Column {
     }
     Toggle {
       width: parent.width
-      label: "Show provider name in the top bar"
-      description: "Turn this on to prefix the bar entry with the provider's short code — cld, gpt, zai, agy — the way Waybar's {vendor_short} does. Off by default. Applies immediately."
+      label: root.tr("toggle.show_provider")
+      description: root.tr("toggle.show_provider_desc")
       checked: root.showProvider
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -283,8 +288,8 @@ Column {
     }
     Toggle {
       width: parent.width
-      label: "Show all providers in the top bar"
-      description: "Turn this on to show every configured provider's icon and usage in the top bar at once, instead of cycling one at a time. Click still opens the panel; the wheel still selects which details you see. Off by default. Applies immediately."
+      label: root.tr("toggle.show_all")
+      description: root.tr("toggle.show_all_desc")
       checked: root.showAll
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -293,8 +298,8 @@ Column {
     }
     Toggle {
       width: parent.width
-      label: "Color-code usage by level"
-      description: "Paint bar values, panel meters, and the tooltip green → yellow → orange → red as usage climbs, using your Omarchy theme. Turn off for a single foreground color everywhere. Off by default. Applies immediately."
+      label: root.tr("toggle.color_code")
+      description: root.tr("toggle.color_code_desc")
       checked: root.colorCodeUsage
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -309,13 +314,52 @@ Column {
     spacing: Style.space(8)
 
     PanelSectionHeader {
-      text: "TOP BAR WINDOW"
+      text: root.tr("section.language")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Text {
       width: parent.width
-      text: "Which quota the bar shows. Providers lacking it fall back to highest. Applies immediately."
+      text: root.tr("language.help")
+      textFormat: Text.PlainText
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+    Dropdown {
+      width: parent.width
+      showLabel: false
+      value: {
+        var tag = I18n.normalizeLocaleTag(root.uiLocaleSetting)
+        return tag === "" ? "auto" : tag
+      }
+      options: [
+        { value: "auto", label: root.tr("language.auto") },
+        { value: "en", label: root.tr("language.en") },
+        { value: "pt-BR", label: root.tr("language.pt-BR") },
+        { value: "ru", label: root.tr("language.ru") }
+      ]
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      enabled: !root.saving
+      onChanged: function(value) { root.uiLocaleRequested(value) }
+    }
+  }
+
+  Column {
+    visible: !root.loading
+    width: parent.width
+    spacing: Style.space(8)
+
+    PanelSectionHeader {
+      text: root.tr("section.bar_window")
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+    }
+    Text {
+      width: parent.width
+      text: root.tr("bar_window.help")
       textFormat: Text.PlainText
       color: root.dim
       font.family: root.fontFamily
@@ -327,10 +371,10 @@ Column {
       showLabel: false
       value: Model.normalizeBarWindow(root.barWindow)
       options: [
-        { value: "auto", label: "Highest (auto)" },
-        { value: "session", label: "5-hour (session)" },
-        { value: "weekly", label: "7-day (weekly)" },
-        { value: "monthly", label: "Monthly (monthly)" }
+        { value: "auto", label: root.tr("bar_window.auto") },
+        { value: "session", label: root.tr("bar_window.session") },
+        { value: "weekly", label: root.tr("bar_window.weekly") },
+        { value: "monthly", label: root.tr("bar_window.monthly") }
       ]
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -368,7 +412,7 @@ Column {
       Row {
         spacing: Style.space(8)
         Button {
-          text: "Retry"
+          text: root.tr("action.retry")
           bordered: true
           focusable: true
           foreground: root.foreground
@@ -376,7 +420,7 @@ Column {
           onClicked: root.load()
         }
         Button {
-          text: "Open terminal settings"
+          text: root.tr("action.terminal_settings")
           bordered: true
           focusable: true
           foreground: root.foreground
@@ -393,13 +437,13 @@ Column {
     spacing: Style.space(8)
 
     PanelSectionHeader {
-      text: "PRIMARY PROVIDER"
+      text: root.tr("section.primary")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Text {
       width: parent.width
-      text: "Used by the CLI, Waybar, TUI, and as this panel's preferred provider."
+      text: root.tr("primary.help")
       textFormat: Text.PlainText
       color: root.dim
       font.family: root.fontFamily
@@ -429,13 +473,13 @@ Column {
       foreground: root.foreground
     }
     PanelSectionHeader {
-      text: "PROVIDERS"
+      text: root.tr("section.providers")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Text {
       width: parent.width
-      text: "Which providers are fetched at all. Turn one off and it leaves the bar, panel and reports until you switch it back on; turning one on takes effect on the next refresh. Saving a credential for a provider keeps switching it on."
+      text: root.tr("providers.help")
       textFormat: Text.PlainText
       color: root.dim
       font.family: root.fontFamily
@@ -452,7 +496,7 @@ Column {
         description: {
           var pending = root.vendorOverrides[modelData.id]
           var effective = pending === true || pending === false ? pending : modelData.enabled
-          return effective ? "On — included in the report." : "Off — not fetched."
+          return effective ? root.tr("status.vendor_on") : root.tr("status.vendor_off")
         }
         checked: {
           var pending = root.vendorOverrides[modelData.id]
@@ -476,13 +520,13 @@ Column {
       foreground: root.foreground
     }
     PanelSectionHeader {
-      text: "AUTHENTICATION"
+      text: root.tr("section.auth")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Text {
       width: parent.width
-      text: "OAuth login opens in a terminal. Complete it, then return here, choose the provider as primary, save, and press Refresh."
+      text: root.tr("auth.help")
       textFormat: Text.PlainText
       color: root.dim
       font.family: root.fontFamily
@@ -491,7 +535,7 @@ Column {
     }
     Button {
       width: parent.width
-      text: "Log in with Nous Research"
+      text: root.tr("auth.nous")
       iconText: "󰍂"
       bordered: true
       focusable: true
@@ -499,13 +543,13 @@ Column {
       fontFamily: root.fontFamily
       enabled: !root.saving
       onClicked: {
-        root.statusText = "Nous Research login is opening in a terminal."
+        root.statusText = root.tr("status.nous_login")
         root.nousLoginRequested()
       }
     }
     Button {
       width: parent.width
-      text: "Log in with GitHub Copilot"
+      text: root.tr("auth.copilot")
       iconText: "󰊤"
       bordered: true
       focusable: true
@@ -513,7 +557,7 @@ Column {
       fontFamily: root.fontFamily
       enabled: !root.saving
       onClicked: {
-        root.statusText = "GitHub sign-in is opening in a terminal. Complete it, then choose GitHub Copilot as primary and save."
+        root.statusText = root.tr("status.copilot_login")
         root.copilotLoginRequested()
       }
     }
@@ -529,13 +573,13 @@ Column {
       foreground: root.foreground
     }
     PanelSectionHeader {
-      text: "CREDENTIALS"
+      text: root.tr("section.credentials")
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
     Text {
       width: parent.width
-      text: "Stored values are never loaded into the shell. Leave a field blank to keep its current value, or use the clear button to remove an inline credential. Environment variables take precedence."
+      text: root.tr("credentials.help")
       textFormat: Text.PlainText
       color: root.dim
       font.family: root.fontFamily
@@ -594,11 +638,11 @@ Column {
             Text {
               id: keyStatus
               anchors.right: parent.right
-              text: keyCard.pendingAction === "clear" ? "will clear"
-                : keyCard.pendingAction === "set" ? "new key"
-                : keyCard.modelData.environment_configured ? "environment override"
-                : keyCard.modelData.inline_configured ? "stored"
-                : "not configured"
+              text: keyCard.pendingAction === "clear" ? root.tr("status.will_clear")
+                : keyCard.pendingAction === "set" ? root.tr("credentials.new_key")
+                : keyCard.modelData.environment_configured ? root.tr("credentials.env_override")
+                : keyCard.modelData.inline_configured ? root.tr("credentials.stored")
+                : root.tr("credentials.not_configured")
               textFormat: Text.PlainText
               color: keyCard.pendingAction === "clear" ? root.urgent : root.dim
               font.family: root.fontFamily
@@ -606,21 +650,35 @@ Column {
             }
           }
 
+          // Env var stays on its own line (identifier, may elide). Role +
+          // note wrap below so long hints are readable instead of cutting
+          // mid-word as "mont…" / "sp…".
+          Text {
+            visible: text !== ""
+            width: parent.width
+            text: keyCard.modelData.environment ? root.safe(keyCard.modelData.environment) : ""
+            textFormat: Text.PlainText
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
           Text {
             visible: text !== ""
             width: parent.width
             text: {
               var parts = []
-              if (keyCard.modelData.environment) parts.push(root.safe(keyCard.modelData.environment))
-              if (keyCard.modelData.secret_label) parts.push(root.safe(keyCard.modelData.secret_label))
-              if (keyCard.modelData.note) parts.push(root.safe(keyCard.modelData.note))
+              var secret = I18n.displaySecretLabel(root.uiLocale, keyCard.modelData.secret_label)
+              var note = I18n.displayNote(root.uiLocale, keyCard.modelData.note)
+              if (secret) parts.push(secret)
+              if (note) parts.push(note)
               return parts.join(" · ")
             }
             textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
-            elide: Text.ElideRight
+            wrapMode: Text.WordWrap
           }
 
           Row {
@@ -633,8 +691,11 @@ Column {
               password: true
               enabled: !root.saving && keyCard.pendingAction !== "clear"
               placeholderText: keyCard.modelData.configured
-                ? "Leave blank to keep current credential"
-                : "Paste " + (keyCard.modelData.secret_label || "credential")
+                ? root.tr("credentials.keep_blank")
+                : root.tr("credentials.paste", {
+                    label: I18n.displaySecretLabel(root.uiLocale, keyCard.modelData.secret_label)
+                      || root.tr("credentials.credential")
+                  })
               foreground: root.foreground
               onTextEdited: keyCard.pendingAction = text.length > 0 ? "set" : "unchanged"
               Keys.onEscapePressed: focus = false
@@ -646,7 +707,7 @@ Column {
               anchors.verticalCenter: keyField.verticalCenter
               iconText: keyCard.pendingAction === "clear" ? "󰕌" : "󰆴"
               tooltipText: keyCard.pendingAction === "clear"
-                ? "Keep the stored key" : "Clear the stored inline key"
+                ? root.tr("credentials.keep_key") : root.tr("credentials.clear_key")
               foreground: root.foreground
               hoverColor: keyCard.pendingAction === "clear" ? root.foreground : root.urgent
               fontFamily: root.fontFamily
@@ -696,7 +757,7 @@ Column {
       && (root.snapshot.primary_choices.length > 0 || root.snapshot.keys.length > 0
           || root.snapshot.vendors.length > 0)
     width: parent.width
-    text: root.saving ? "Saving…" : "Save settings"
+    text: root.saving ? root.tr("action.saving") : root.tr("action.save")
     iconText: root.saving ? "󰑐" : "󰄬"
     iconSpinning: root.saving
     bordered: true
