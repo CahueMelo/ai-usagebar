@@ -66,7 +66,7 @@ Each release is also published at
   ambient key, or when `show_default_account = false` was set. The catalog now
   checks named API-key accounts as well as Anthropic and OpenAI named accounts
   and path overrides (`credentials_path`, `codex_auth_path`), matching the
-  credential resolution of the fetch and `detect` (#307).
+  credential resolution of the fetch and `detect` (see #307).
 
 ## [1.30.0] — 2026-10-01
 
