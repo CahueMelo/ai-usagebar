@@ -9,6 +9,13 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **Korean (한국어) in the tray popover.** Settings → Appearance → Language
+  gains 한국어 on Windows and macOS, with a full `messages/ko.json` catalog;
+  metric labels and usage strings from the report are translated as they are
+  for Português.
+
 ## [1.30.0] — 2026-10-01
 
 ### Added

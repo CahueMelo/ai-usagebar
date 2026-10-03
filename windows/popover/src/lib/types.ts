@@ -7,7 +7,7 @@ export interface RowPrefs {
 }
 
 export type TimeFormat = "12" | "24" | "auto";
-export type Language = "en" | "pt-BR";
+export type Language = "en" | "pt-BR" | "ko";
 export type PopoverStyle = "classic" | "native";
 
 export interface Layout {

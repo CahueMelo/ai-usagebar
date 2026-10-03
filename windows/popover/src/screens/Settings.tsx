@@ -232,7 +232,7 @@ export function Settings({
       <Section title={m.appearance()}>
         <SettingRow label={m.language()}>
           <Picker
-            options={[["en", "English"], ["pt-BR", "Português"]]}
+            options={[["en", "English"], ["pt-BR", "Português"], ["ko", "한국어"]]}
             value={language}
             onChange={onLanguage}
           />

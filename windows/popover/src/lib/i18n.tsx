@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { m } from "@/paraglide/messages.js";
 import { getLocale, setLocale } from "@/paraglide/runtime.js";
 
-export type Language = "en" | "pt-BR";
+export type Language = "en" | "pt-BR" | "ko";
 
 // Labels that reach the page as data rather than as a message: metric names from the Rust
 // report, the provider links and the star-limit error from `model.js`.
@@ -29,14 +29,14 @@ export function LanguageProvider({ children, language }: { children: ReactNode; 
 }
 
 export function translateMetricLabel(language: Language, label: string): string {
-  if (language !== "pt-BR") return label;
+  if (language === "en") return label;
   const parts = /^(.+?) \((.+)\)$/.exec(label);
   if (parts) return `${translateMetricLabel(language, parts[1])} (${translateMetricLabel(language, parts[2])})`;
   return metricMessages[label]?.(language) ?? label;
 }
 
 export function translateUsage(language: Language, value: string): string {
-  if (language !== "pt-BR") return value;
+  if (language === "en") return value;
   const options = { locale: language };
   return value
     .replace(/\b(\d+)% left\b/g, (_, percent: string) => m.percent_left({ percent }, options))
