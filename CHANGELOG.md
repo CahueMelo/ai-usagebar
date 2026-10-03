@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Omarchy bar chips keep their icon next to their own value.** 1.30.0 put a
+  6 px spacer between a chip's brand mark and its value inside a row that
+  already spaces its children 4 px apart, so the gap became 14 px — wider than
+  the gap to the previous chip, and each icon read as part of the chip before
+  it. The spacer is gone; the row's spacing is the gap again, and an icon-only
+  chip still collapses to the mark alone.
+
 ## [1.30.0] — 2026-10-01
 
 ### Added
