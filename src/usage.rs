@@ -923,6 +923,7 @@ pub struct OpenRouterSnapshot {
     pub is_free_tier: bool,
     pub limit: Option<f64>,
     pub limit_remaining: Option<f64>,
+    pub recent_models: Vec<String>,
 }
 
 impl Eq for OpenRouterSnapshot {}

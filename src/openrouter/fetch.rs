@@ -7,7 +7,7 @@ use crate::cache::{Cache, acquire_lock_async};
 use crate::error::{AppError, Result};
 use crate::usage::OpenRouterSnapshot;
 
-use super::types::{CreditsData, KeyData, OrEnvelope, combine};
+use super::types::{ActivityItem, CreditsData, KeyData, OrEnvelope, combine};
 
 pub const BASE_URL: &str = "https://openrouter.ai/api/v1";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -17,6 +17,7 @@ const LOCK_TIMEOUT: Duration = Duration::from_secs(15);
 pub struct Endpoints {
     pub credits: String,
     pub key: String,
+    pub activity: String,
 }
 
 impl Default for Endpoints {
@@ -24,6 +25,7 @@ impl Default for Endpoints {
         Self {
             credits: format!("{BASE_URL}/credits"),
             key: format!("{BASE_URL}/key"),
+            activity: format!("{BASE_URL}/activity"),
         }
     }
 }
@@ -53,8 +55,8 @@ pub async fn fetch_snapshot(
     // fabricated zero-credit snapshot.
 
     match fetch_live(client, endpoints, api_key).await {
-        Ok((credits, key)) => {
-            let snap = combine(credits, key);
+        Ok((credits, key, recent_models)) => {
+            let snap = combine(credits, key, recent_models);
             // Serialize back to JSON for the cache.
             let cache_repr = serde_json::json!({
                 "snapshot": serde_repr(&snap),
@@ -148,6 +150,16 @@ fn parse_cache(bytes: &[u8]) -> Result<OpenRouterSnapshot> {
             .ok_or_else(|| AppError::Schema("openrouter cache missing 'is_free_tier'".into()))?,
         limit: optional_money("limit", true)?,
         limit_remaining: optional_money("limit_remaining", false)?,
+        recent_models: s
+            .get("recent_models")
+            .and_then(serde_json::Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -162,6 +174,7 @@ fn serde_repr(snap: &OpenRouterSnapshot) -> serde_json::Value {
         "is_free_tier": snap.is_free_tier,
         "limit": snap.limit,
         "limit_remaining": snap.limit_remaining,
+        "recent_models": snap.recent_models,
     })
 }
 
@@ -169,12 +182,58 @@ async fn fetch_live(
     client: &reqwest::Client,
     endpoints: &Endpoints,
     api_key: &str,
-) -> Result<(CreditsData, KeyData)> {
+) -> Result<(CreditsData, KeyData, Vec<String>)> {
     // Fetch in parallel.
     let credits_fut = fetch_one::<CreditsData>(client, &endpoints.credits, api_key);
     let key_fut = fetch_one::<KeyData>(client, &endpoints.key, api_key);
-    let (credits, key) = tokio::join!(credits_fut, key_fut);
-    Ok((credits?, key?))
+    let activity_fut = fetch_one::<Vec<ActivityItem>>(client, &endpoints.activity, api_key);
+    let (credits, key, activity) = tokio::join!(credits_fut, key_fut, activity_fut);
+    let recent_models = match activity {
+        Ok(items) => extract_recent_models(items),
+        Err(_) => Vec::new(),
+    };
+    Ok((credits?, key?, recent_models))
+}
+
+fn shorten_model_id(name: &str) -> &str {
+    let mut clean = name.strip_suffix("-instruct").unwrap_or(name);
+    clean = clean.strip_suffix("-preview").unwrap_or(clean);
+    clean = clean.strip_suffix("-chat").unwrap_or(clean);
+    while clean.len() > 18 && clean.contains('-') {
+        if let Some((prefix, _)) = clean.rsplit_once('-') {
+            clean = prefix;
+        } else {
+            break;
+        }
+    }
+    clean
+}
+
+fn extract_recent_models(items: Vec<ActivityItem>) -> Vec<String> {
+    let mut models: Vec<(String, f64, u64)> = Vec::new();
+    for item in items {
+        if let Some(m) = item.model {
+            if let Some(existing) = models.iter_mut().find(|(name, _, _)| name == &m) {
+                existing.1 += item.usage;
+                existing.2 += item.requests;
+            } else if models.len() < 2 {
+                models.push((m, item.usage, item.requests));
+            }
+        }
+    }
+    models
+        .into_iter()
+        .map(|(m, spend, reqs)| {
+            let short_name = m.split('/').next_back().unwrap_or(&m);
+            let clean_name = shorten_model_id(short_name);
+            let cost = crate::format::usd(spend);
+            if spend > 0.0 {
+                format!("{clean_name} ({cost} · {reqs} reqs)")
+            } else {
+                format!("{clean_name} ({reqs} reqs)")
+            }
+        })
+        .collect()
 }
 
 async fn fetch_one<T: for<'de> serde::Deserialize<'de>>(
@@ -244,6 +303,7 @@ mod tests {
         let endpoints = Endpoints {
             credits: format!("{}/api/v1/credits", server.url()),
             key: format!("{}/api/v1/key", server.url()),
+            activity: format!("{}/api/v1/activity", server.url()),
         };
         let out = fetch_snapshot(
             &client,
@@ -281,6 +341,7 @@ mod tests {
         let endpoints = Endpoints {
             credits: format!("{}/api/v1/credits", server.url()),
             key: format!("{}/api/v1/key", server.url()),
+            activity: format!("{}/api/v1/activity", server.url()),
         };
         let err = fetch_snapshot(
             &reqwest::Client::new(),
@@ -347,6 +408,7 @@ mod tests {
         let endpoints = Endpoints {
             credits: format!("{}/api/v1/credits", server.url()),
             key: format!("{}/api/v1/key", server.url()),
+            activity: format!("{}/api/v1/activity", server.url()),
         };
         let mut outcomes = Vec::new();
         let mut caches = Vec::new();
@@ -426,6 +488,7 @@ mod tests {
         let endpoints = Endpoints {
             credits: format!("{}/api/v1/credits", server.url()),
             key: format!("{}/api/v1/key", server.url()),
+            activity: format!("{}/api/v1/activity", server.url()),
         };
         let client = reqwest::Client::new();
 
@@ -495,6 +558,7 @@ mod tests {
         let endpoints = Endpoints {
             credits: format!("{}/api/v1/credits", server.url()),
             key: format!("{}/api/v1/key", server.url()),
+            activity: format!("{}/api/v1/activity", server.url()),
         };
         let out = fetch_snapshot(&client, "k", &cache, &endpoints, Duration::from_secs(0))
             .await

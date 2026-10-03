@@ -11,7 +11,7 @@ defensive and includes opt-in live tests for catching response changes.
 | **Codex** | `chatgpt.com/backend-api/wham/usage`, plus `…/wham/rate-limit-reset-credits` when any are banked (undocumented; both used by the official `codex` CLI) | Codex 5h and/or weekly, Code-review weekly, named extra limits with their own windows, models currently at capacity, Credits, banked reset credits + expiry | Yes |
 | **GitHub Copilot** | `api.github.com/copilot_internal/user` (private; used by VS Code) | Premium requests, Chat, and Completions quota %, counts when supplied, plan, reset | Yes |
 | **Z.AI** | `api.z.ai/api/monitor/usage/quota/limit` (undocumented) | Session 5h, Weekly 7d, MCP tools monthly | Yes |
-| **OpenRouter** | `openrouter.ai/api/v1/{credits,key}` (documented) | Balance, today/week/month spend, free vs paid tier | Yes |
+| **OpenRouter** | `openrouter.ai/api/v1/{credits,key,activity}` (documented) | Balance, today/week/month spend, free vs paid tier, recent models | Yes |
 | **DeepSeek** | `api.deepseek.com/user/balance` (documented) | Balance, granted, topped-up credits | Yes |
 | **DeepInfra** | `api.deepinfra.com/payment/checklist` and `/payment/usage?from=current` (documented) | Available prepaid balance, current-month spend, optional monthly limit | No — widget/TUI only |
 | **Kimi** | `api.kimi.com\|.ai/coding/v1/usages` (undocumented; community-confirmed), plus `auth.kimi.com\|.ai/api/oauth/token` to refresh a Kimi Code CLI login | Weekly subscription quota + 5h rolling rate-limit window; newer accounts return a `usages` ratio map instead of the weekly block, and only the combined monthly pool (`limit_month_total`) is read from it | No — widget/TUI only; desktop protocol and marker parity are future work |

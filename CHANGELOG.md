@@ -9,6 +9,8 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
 - **Omarchy panel and settings speak English, Russian, and Brazilian Portuguese.**
   A Language dropdown (`uiLocale`: Auto / English / Português (Brasil) / Русский)
   remaps chrome, formatters, known report footnotes, and credential hints through
@@ -20,6 +22,13 @@ Each release is also published at
   gains 한국어 on Windows and macOS, with a full `messages/ko.json` catalog;
   metric labels and usage strings from the report are translated as they are
   for Português.
+
+- **OpenRouter: recent models activity and real-dollar credit balance.**
+  `GET /api/v1/activity` queries the 2 most recently used models, showing their
+  per-model cost and request counts alongside the existing spend breakdown in both
+  the TUI and the popover. When no quota reset date is published, the meter row
+  displays the account's available credit balance in USD ($) directly below the
+  gauge. Full Portuguese (pt-BR) localization support in the popover.
 
 ### Fixed
 
@@ -54,6 +63,7 @@ Each release is also published at
   checks named API-key accounts as well as Anthropic and OpenAI named accounts
   and path overrides (`credentials_path`, `codex_auth_path`), matching the
   credential resolution of the fetch and `detect` (#307).
+
 ## [1.30.0] — 2026-10-01
 
 ### Added
