@@ -80,6 +80,11 @@ assert.match(barWidgetSource, /x:\s*chipHit\.hitGaps\.left/);
 // content keeps full opacity.
 assert.match(barWidgetSource, /opacity:\s*root\.opened\s*&&\s*root\.panelItem\s*&&\s*modelData\.id\s*\n\s*&&\s*modelData\.id\s*!==\s*root\.panelItem\.selectedEntryId\s*\?\s*0\.45\s*:\s*1/);
 assert.match(barWidgetSource, /Behavior on opacity\s*\{\s*\n\s*NumberAnimation\s*\{\s*duration:\s*140/);
+// The chip row's own spacing is the whole gap between the brand mark and its
+// value; a spacer item there gets that spacing on both sides, so the icon sits
+// nearer the previous chip's value than its own.
+assert.match(barWidgetSource, /id:\s*chipContent[\s\S]*?spacing:\s*Style\.space\(4\)/);
+assert.doesNotMatch(barWidgetSource, /BrandMark\s*\{[^}]*\}\s*\n\s*Item\s*\{/);
 assert.match(barWidgetSource, /function\s+triggerPress\s*\(buttonCode\)/);
 assert.match(barWidgetSource, /root\.panelItem\.openEntry\(chipHit\.chip\.id\s*\|\|\s*""\)/);
 // Classic alarm chrome when colour-coding is off; RAG colours replace it when on.
