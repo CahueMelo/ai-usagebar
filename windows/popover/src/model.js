@@ -19,7 +19,7 @@ import { m } from "./paraglide/messages.js";
 
 export const LAYOUT_KEY = "aiub.tray.layout.v1";
 const COLLAPSED_METRIC_CAP = 2;
-const lang = (locale) => locale === "pt-BR" ? "pt-BR" : "en";
+const lang = (locale) => locale === "pt-BR" || locale === "ko" ? locale : "en";
 /** At most two starred metrics per provider, matching OpenUsage. */
 export const MAX_STARS_PER_PROVIDER = 2;
 
