@@ -9,6 +9,15 @@ Each release is also published at
 
 ## [Unreleased]
 
+### Added
+
+- **Omarchy panel and settings speak English, Russian, and Brazilian Portuguese.**
+  A Language dropdown (`uiLocale`: Auto / English / Português (Brasil) / Русский)
+  remaps chrome, formatters, known report footnotes, and credential hints through
+  a local catalog; Auto follows the system locale. Long settings copy wraps under
+  the hero instead of overflowing the detail pill, and API-key notes wrap on their
+  own line under the env var name.
+
 ### Fixed
 
 - **Omarchy bar chips keep their icon next to their own value.** 1.30.0 put a

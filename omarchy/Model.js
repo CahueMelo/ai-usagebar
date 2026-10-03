@@ -723,26 +723,30 @@ function cursorDualHeadline(entry, flags) {
     text: auto.percent + "%",
     line: "Cursor Models · " + auto.percent + "%",
     percent: auto.percent,
-    severity: auto.severity
+    severity: auto.severity,
+    pool: "models"
   })
   if (show.other) parts.push({
     text: api.percent + "%",
     line: "Cursor Other Models · " + api.percent + "%",
     percent: api.percent,
-    severity: api.severity
+    severity: api.severity,
+    pool: "other"
   })
   if (show.demand && demand) parts.push({
     text: demand.bar,
     line: "Cursor On Demand · " + demand.usedPct + "%",
     percent: demand.usedPct,
-    severity: demand.severity
+    severity: demand.severity,
+    pool: "demand"
   })
   if (parts.length === 0) {
     parts.push({
       text: auto.percent + "%",
       line: "Cursor Models · " + auto.percent + "%",
       percent: auto.percent,
-      severity: auto.severity
+      severity: auto.severity,
+      pool: "models"
     })
   }
   var worse = parts[0]
@@ -761,7 +765,12 @@ function cursorDualHeadline(entry, flags) {
     lines.push(parts[n].line)
     if (n > 0) segments.push({ text: " · ", severity: "" })
     segments.push({ text: parts[n].text, severity: parts[n].severity })
-    tooltipRows.push({ text: parts[n].line, severity: parts[n].severity })
+    tooltipRows.push({
+      text: parts[n].line,
+      severity: parts[n].severity,
+      pool: parts[n].pool || "",
+      percent: parts[n].percent
+    })
   }
   var text = texts.join(" · ")
   var tooltip = lines.join("\n")

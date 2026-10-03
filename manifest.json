@@ -31,6 +31,7 @@
       "showProvider": false,
       "showAll": false,
       "colorCodeUsage": false,
+      "uiLocale": "auto",
       "barWindow": "auto",
       "showCursorModels": true,
       "showCursorOther": true,
@@ -80,6 +81,19 @@
         "label": "Color-code usage by level",
         "description": "Paint bar values, panel meters, and the tooltip green → yellow → orange → red as usage climbs, using your Omarchy theme. Turn off for a single foreground color. Off by default.",
         "defaultValue": false
+      },
+      {
+        "key": "uiLocale",
+        "type": "enum",
+        "label": "Interface language",
+        "description": "Language for the Omarchy panel and settings. Auto follows the system locale.",
+        "options": [
+          "auto",
+          "en",
+          "pt-BR",
+          "ru"
+        ],
+        "defaultValue": "auto"
       },
       {
         "key": "barWindow",

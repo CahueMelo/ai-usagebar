@@ -7,6 +7,99 @@ const model = {};
 vm.createContext(model);
 vm.runInContext(source, model, {filename: 'Model.js'});
 
+const i18n = {};
+vm.createContext(i18n);
+vm.runInContext(fs.readFileSync(new URL('./I18n.js', import.meta.url), 'utf8'), i18n, {
+  filename: 'I18n.js',
+});
+
+// Catalogs must stay in lockstep: a key in English with no locale sibling falls
+// back silently to EN in the panel, which is how half-translated UI ships.
+// Arrays created inside vm.runInContext live in another realm; copy out
+// before deepEqual so Node's strict comparator accepts them.
+assert.deepEqual(Array.from(i18n.SUPPORTED), ['en', 'ru', 'pt-BR']);
+const enKeys = Object.keys(i18n.MESSAGES.en).sort();
+for (const locale of Array.from(i18n.SUPPORTED)) {
+  assert.deepEqual(Object.keys(i18n.MESSAGES[locale]).sort(), enKeys, `${locale} catalog keys`);
+  for (const key of enKeys) {
+    const value = i18n.MESSAGES[locale][key];
+    assert.equal(typeof value, 'string', `${locale}.${key} type`);
+    assert.ok(value.trim().length > 0, `${locale}.${key} empty`);
+  }
+  assert.equal(i18n.MONTHS[locale].length, 12, `${locale} months`);
+  assert.ok(i18n.LABELS[locale]['Cursor Models'], `${locale} Cursor Models label`);
+}
+
+assert.equal(i18n.normalizeLocaleTag('auto'), 'auto');
+assert.equal(i18n.normalizeLocaleTag(''), 'auto');
+assert.equal(i18n.normalizeLocaleTag('en_US.UTF-8'), 'en');
+assert.equal(i18n.normalizeLocaleTag('ru_RU'), 'ru');
+assert.equal(i18n.normalizeLocaleTag('pt-BR'), 'pt-BR');
+assert.equal(i18n.normalizeLocaleTag('pt_BR.UTF-8'), 'pt-BR');
+assert.equal(i18n.normalizeLocaleTag('pt_PT'), 'pt-BR');
+assert.equal(i18n.normalizeLocaleTag('de_DE'), '');
+
+assert.equal(i18n.resolveLocale('auto', 'ru_RU.UTF-8'), 'ru');
+assert.equal(i18n.resolveLocale('auto', 'pt_BR'), 'pt-BR');
+assert.equal(i18n.resolveLocale('auto', 'de_DE'), 'en');
+assert.equal(i18n.resolveLocale('pt-BR', 'en_US'), 'pt-BR');
+assert.equal(i18n.resolveLocale('ru', 'en_US'), 'ru');
+
+assert.equal(i18n.t('en', 'section.language'), 'LANGUAGE');
+assert.equal(i18n.t('ru', 'section.language'), 'ЯЗЫК');
+assert.equal(i18n.t('pt-BR', 'section.language'), 'IDIOMA');
+assert.equal(
+  i18n.t('en', 'language.help'),
+  'Language for the panel and settings. Auto matches your system language.',
+);
+assert.doesNotMatch(i18n.t('en', 'language.help'), /\{system\}|ru_RU|en_US/);
+assert.doesNotMatch(i18n.t('ru', 'language.help'), /\{system\}|ru_RU/);
+assert.doesNotMatch(i18n.t('pt-BR', 'language.help'), /\{system\}|pt_BR/);
+assert.equal(i18n.t('pt-BR', 'status.refresh_failed', {error: 'boom'}),
+  'Falha na atualização; mostrando o relatório anterior. boom');
+assert.equal(i18n.displayLabel('ru', 'Other Models'), 'Другие модели');
+assert.equal(i18n.displayLabel('pt-BR', 'On-Demand'), 'Sob demanda');
+assert.equal(i18n.displayLabel('ru', 'On-Demand'), 'По запросу');
+assert.equal(i18n.displayLabel('ru', 'Resets'), 'Сброс');
+assert.equal(i18n.displayLabel('en', 'Unknown Metric'), 'Unknown Metric');
+assert.equal(
+  i18n.displayDetail('ru', 'Named / API models · on-demand off'),
+  'Именованные / API-модели · on-demand выкл.',
+);
+assert.equal(i18n.displayDetail('ru', 'Auto + Composer'), 'Auto + Composer');
+assert.equal(
+  i18n.displayDetail('pt-BR', '$1.25 of $5.00 used (25%)'),
+  '$1.25 de $5.00 usados (25%)',
+);
+assert.equal(i18n.displaySecretLabel('ru', 'API key'), 'API-ключ');
+assert.equal(
+  i18n.displayNote('ru', 'admin key — monthly spend'),
+  'admin-ключ — месячные траты',
+);
+assert.equal(
+  i18n.displayNote('ru', 'management key, not the inference key'),
+  'management-ключ, не inference',
+);
+assert.equal(
+  i18n.displayNote('ru', 'billing balance and monthly spend'),
+  'баланс и месячные траты',
+);
+assert.equal(i18n.displayNote('en', 'ollama.com/settings/keys'), 'ollama.com/settings/keys');
+assert.equal(
+  i18n.t('ru', 'hero.settings_detail'),
+  'Пока вы не нажмёте «Сохранить», ничего не изменится.',
+);
+
+const resetAt = '2026-08-14T12:00:00';
+const nowMs = Date.parse('2026-08-14T08:00:00');
+assert.match(i18n.formatReset(resetAt, nowMs, 'en'), /^Resets in /);
+assert.match(i18n.formatReset(resetAt, nowMs, 'ru'), /^Сброс через /);
+assert.match(i18n.formatReset(resetAt, nowMs, 'pt-BR'), /^Redefine em /);
+assert.equal(i18n.formatUpdated('', nowMs, 'pt-BR'), i18n.t('pt-BR', 'updated.unavailable'));
+assert.equal(i18n.formatUpdated(new Date(nowMs - 30_000).toISOString(), nowMs, 'ru'),
+  i18n.t('ru', 'updated.just_now'));
+assert.equal(i18n.tipPoolLine('pt-BR', 'other', 42), 'Outros modelos Cursor · 42%');
+
 // Keep the marketplace/runtime shape in CI. The marketplace's structural
 // validator only checks that the declared file exists; Quattro additionally
 // needs the bar entry point to forward its nested panel lifecycle.
@@ -31,6 +124,11 @@ assert.equal(manifest.barWidget.defaults.colorCodeUsage, false);
 const colorCodeUsageSchema = manifest.barWidget.schema.find(row => row.key === 'colorCodeUsage');
 assert.equal(colorCodeUsageSchema.type, 'boolean');
 assert.equal(colorCodeUsageSchema.defaultValue, false);
+assert.equal(manifest.barWidget.defaults.uiLocale, 'auto');
+const uiLocaleSchema = manifest.barWidget.schema.find(row => row.key === 'uiLocale');
+assert.equal(uiLocaleSchema.type, 'enum');
+assert.deepEqual(uiLocaleSchema.options, ['auto', 'en', 'pt-BR', 'ru']);
+assert.equal(uiLocaleSchema.defaultValue, 'auto');
 // Pinned window is opt-in display-only: existing shell.json entries without
 // the key keep the historical highest-percent label.
 assert.equal(manifest.barWidget.defaults.barWindow, 'auto');
@@ -197,29 +295,64 @@ assert.match(settingsViewSource, /function\s+finishApply\s*\(\)\s*\{[\s\S]*?scru
 assert.match(settingsViewSource, /signal\s+nousLoginRequested\(\)/);
 assert.match(settingsViewSource, /signal\s+copilotLoginRequested\(\)/);
 assert.match(settingsViewSource, /signal\s+showValueRequested\(bool\s+enabled\)/);
-assert.match(settingsViewSource, /label:\s*"Show usage value in the top bar"/);
+assert.match(settingsViewSource, /root\.tr\("toggle\.show_value"\)/);
 assert.match(settingsViewSource, /signal\s+showProviderRequested\(bool\s+enabled\)/);
-assert.match(settingsViewSource, /label:\s*"Show provider name in the top bar"/);
+assert.match(settingsViewSource, /root\.tr\("toggle\.show_provider"\)/);
 assert.match(settingsViewSource, /signal\s+showAllRequested\(bool\s+enabled\)/);
-assert.match(settingsViewSource, /label:\s*"Show all providers in the top bar"/);
+assert.match(settingsViewSource, /root\.tr\("toggle\.show_all"\)/);
 assert.match(settingsViewSource, /signal\s+colorCodeUsageRequested\(bool\s+enabled\)/);
-assert.match(settingsViewSource, /label:\s*"Color-code usage by level"/);
+assert.match(settingsViewSource, /signal\s+uiLocaleRequested\(string\s+value\)/);
+assert.match(settingsViewSource, /root\.tr\("toggle\.color_code"\)/);
 assert.match(settingsViewSource, /signal\s+barWindowRequested\(string\s+value\)/);
-assert.match(settingsViewSource, /text:\s*"TOP BAR WINDOW"/);
-assert.match(settingsViewSource, /\{\s*value:\s*"auto",\s*label:\s*"Highest \(auto\)"/);
-assert.match(settingsViewSource, /\{\s*value:\s*"session",\s*label:\s*"5-hour \(session\)"/);
-assert.match(settingsViewSource, /\{\s*value:\s*"weekly",\s*label:\s*"7-day \(weekly\)"/);
-assert.match(settingsViewSource, /\{\s*value:\s*"monthly",\s*label:\s*"Monthly \(monthly\)"/);
+assert.match(settingsViewSource, /text:\s*root\.tr\("section\.bar_window"\)/);
+assert.match(settingsViewSource, /value:\s*"auto",\s*label:\s*root\.tr\("bar_window\.auto"\)/);
+assert.match(settingsViewSource, /value:\s*"session",\s*label:\s*root\.tr\("bar_window\.session"\)/);
+assert.match(settingsViewSource, /value:\s*"weekly",\s*label:\s*root\.tr\("bar_window\.weekly"\)/);
+assert.match(settingsViewSource, /value:\s*"monthly",\s*label:\s*root\.tr\("bar_window\.monthly"\)/);
+assert.match(settingsViewSource, /import\s+"I18n\.js"\s+as\s+I18n/);
+assert.match(settingsViewSource, /text:\s*root\.tr\("section\.language"\)/);
+assert.match(settingsViewSource, /text:\s*root\.tr\("language\.help"\)/);
+assert.doesNotMatch(settingsViewSource, /language\.help".*system|Qt\.locale\(\)\.name/);
+assert.match(settingsViewSource, /value:\s*"auto",\s*label:\s*root\.tr\("language\.auto"\)/);
+assert.match(settingsViewSource, /value:\s*"en",\s*label:\s*root\.tr\("language\.en"\)/);
+assert.match(settingsViewSource, /value:\s*"pt-BR",\s*label:\s*root\.tr\("language\.pt-BR"\)/);
+assert.match(settingsViewSource, /value:\s*"ru",\s*label:\s*root\.tr\("language\.ru"\)/);
+assert.match(panelSource, /import\s+"I18n\.js"\s+as\s+I18n/);
+assert.match(panelSource, /setting\("uiLocale",\s*"auto"\)/);
+assert.match(panelSource, /I18n\.resolveLocale\(uiLocaleSetting,\s*Qt\.locale\(\)\.name\)/);
+assert.match(panelSource, /function\s+setUiLocale\s*\(/);
+assert.match(panelSource, /onUiLocaleRequested/);
+assert.match(panelSource, /I18n\.formatReset\(/);
+assert.match(panelSource, /I18n\.formatUpdated\(/);
+assert.match(panelSource, /I18n\.displayLabel\(/);
+assert.match(panelSource, /I18n\.displayDetail\(/);
+assert.match(panelSource, /I18n\.tipPoolLine\(/);
+// Settings hero: long copy wraps under the hero, not inside the detail pill.
+assert.match(panelSource, /detail:\s*root\.settingsOpen\s*\?\s*""/);
+assert.match(panelSource, /root\.tr\("hero\.settings_detail"\)/);
+assert.match(panelSource, /I18n\.displayLabel\(root\.uiLocale,\s*detailRow\.row\.label\)/);
+assert.match(settingsViewSource, /I18n\.displaySecretLabel\(/);
+assert.match(settingsViewSource, /I18n\.displayNote\(/);
+assert.match(settingsViewSource, /wrapMode:\s*Text\.WordWrap/);
+// Env identifier stays on its own elided line; role+note wrap on the next.
+assert.match(
+  settingsViewSource,
+  /modelData\.environment[\s\S]*?elide:\s*Text\.ElideRight[\s\S]*?displaySecretLabel[\s\S]*?displayNote[\s\S]*?wrapMode:\s*Text\.WordWrap/s,
+);
+assert.doesNotMatch(
+  settingsViewSource,
+  /parts\.push\(root\.safe\(keyCard\.modelData\.environment\)\)[\s\S]*parts\.push\(root\.safe\(keyCard\.modelData\.note\)\)/,
+);
 assert.match(panelSource, /barWindow:\s*root\.barWindow/);
 assert.match(panelSource, /onShowAllRequested/);
 assert.match(panelSource, /onShowProviderRequested/);
-assert.match(settingsViewSource, /Log in with Nous Research/);
-assert.match(settingsViewSource, /Log in with GitHub Copilot/);
-assert.match(settingsViewSource, /choose GitHub Copilot as primary and save/);
+assert.match(settingsViewSource, /root\.tr\("auth\.nous"\)/);
+assert.match(settingsViewSource, /root\.tr\("auth\.copilot"\)/);
+assert.match(settingsViewSource, /root\.tr\("status\.copilot_login"\)/);
 assert.match(settingsViewSource, /model:\s*root\.snapshot\.keys/);
 // Provider on/off switches (#244): the section lists the snapshot's vendors
 // and routes every change through the same stdin patch as the keys.
-assert.match(settingsViewSource, /text:\s*"PROVIDERS"/);
+assert.match(settingsViewSource, /text:\s*root\.tr\("section\.providers"\)/);
 assert.match(settingsViewSource, /model:\s*root\.snapshot\.vendors/);
 assert.match(settingsViewSource, /function\s+collectVendorToggles\s*\(/);
 assert.match(settingsViewSource, /function\s+setVendorOverride\s*\(/);
@@ -227,7 +360,7 @@ assert.match(
   settingsViewSource,
   /Model\.buildSettingsPatch\(selectedPrimary,\s*collectChanges\(\),\s*collectVendorToggles\(\)\)/
 );
-assert.match(settingsViewSource, /Paste\s*"\s*\+\s*\(keyCard\.modelData\.secret_label/);
+assert.match(settingsViewSource, /root\.tr\("credentials\.paste"/);
 assert.match(panelSource, /function\s+openNousLogin\s*\(/);
 assert.match(panelSource, /ai-usagebar auth nous login/);
 assert.match(panelSource, /onNousLoginRequested/);

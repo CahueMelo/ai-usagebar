@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "I18n.js" as I18n
 
 // Native Omarchy Quattro popup. BarWidget.qml owns the bar slot and injects
 // its button as this panel's anchor; collection stays in the Rust binary.
@@ -56,6 +57,9 @@ Panel {
   readonly property bool showProvider: Model.booleanSetting(setting("showProvider", false), false)
   readonly property bool showAll: Model.booleanSetting(setting("showAll", false), false)
   readonly property bool colorCodeUsage: Model.booleanSetting(setting("colorCodeUsage", false), false)
+  readonly property string uiLocaleSetting: String(setting("uiLocale", "auto") || "auto")
+  // Bind Qt.locale so Auto tracks the shell language without a restart.
+  readonly property string uiLocale: I18n.resolveLocale(uiLocaleSetting, Qt.locale().name)
   readonly property string barWindow: Model.normalizeBarWindow(setting("barWindow", "auto"))
   readonly property bool showCursorModels: Model.booleanSetting(setting("showCursorModels", true), true)
   readonly property bool showCursorOther: Model.booleanSetting(setting("showCursorOther", true), true)
@@ -82,6 +86,17 @@ Panel {
   readonly property bool reportMissing: loadError !== "" && entries.length === 0
   readonly property bool alarming: (showAll ? shownAnyAlarming() : entryAlarming)
     || reportMissing
+
+  function tr(key, params) {
+    return I18n.t(uiLocale, key, params || null)
+  }
+
+  function setUiLocale(value) {
+    var next = I18n.normalizeLocaleTag(value)
+    if (next === "") next = "auto"
+    if (next === uiLocaleSetting) return
+    persistWidgetSettings({ uiLocale: next })
+  }
 
   function alpha(color, opacity) {
     return Qt.rgba(color.r, color.g, color.b, opacity)
@@ -257,9 +272,9 @@ Panel {
       ? Model.cursorPoolPresence(entry)
       : { models: true, other: true, demand: true }
     var rows = []
-    if (has.models) rows.push({ poolId: "models", label: "Cursor Models" })
-    if (has.other) rows.push({ poolId: "other", label: "Other Models" })
-    if (has.demand) rows.push({ poolId: "demand", label: "On-Demand" })
+    if (has.models) rows.push({ poolId: "models", label: root.tr("pool.models") })
+    if (has.other) rows.push({ poolId: "other", label: root.tr("pool.other") })
+    if (has.demand) rows.push({ poolId: "demand", label: root.tr("pool.demand") })
     return rows
   }
 
@@ -397,12 +412,12 @@ Panel {
   }
 
   function statusMessage() {
-    if (filterMiss) return "No configured entry matches ‘" + configuredProvider + "’. Clear the provider setting or use an id from ai-usagebar usage --json."
+    if (filterMiss) return root.tr("status.filter_miss", { id: configuredProvider })
     if (entry && entry.error !== "") return entry.error
     if (loadError !== "") return entries.length > 0
-      ? "Refresh failed; showing the previous report. " + loadError
+      ? root.tr("status.refresh_failed", { error: loadError })
       : loadError
-    if (entry && entry.stale) return "Cached data · the provider could not supply a fresh response."
+    if (entry && entry.stale) return root.tr("status.cached")
     return ""
   }
 
@@ -411,10 +426,10 @@ Panel {
   }
 
   function heroMeta() {
-    if (!entry) return loading ? "Loading providers" : "Usage report"
-    if (entry.error !== "") return "Provider unavailable"
-    var text = entry.plan || "Usage and limits"
-    if (entry.stale) text += " · cached"
+    if (!entry) return loading ? root.tr("hero.loading") : root.tr("hero.usage_report")
+    if (entry.error !== "") return root.tr("hero.provider_unavailable")
+    var text = entry.plan || root.tr("hero.usage_limits")
+    if (entry.stale) text += " · " + root.tr("tip.cached")
     return Model.autoTextSafe(text)
   }
 
@@ -566,10 +581,14 @@ Panel {
         var out = []
         for (var r = 0; r < pools.tooltipRows.length; r++) {
           var row = pools.tooltipRows[r]
-          var text = Model.autoTextSafe(row.text || "").trim()
+          var text = ""
+          if (row.pool)
+            text = I18n.tipPoolLine(root.uiLocale, row.pool, row.percent)
+          else
+            text = Model.autoTextSafe(row.text || "").trim()
           if (text === "") continue
           if (item && item.stale && r === pools.tooltipRows.length - 1)
-            text += " · cached"
+            text += " · " + root.tr("tip.cached")
           out.push({ text: text, severity: row.severity || "low" })
         }
         return out
@@ -582,14 +601,14 @@ Panel {
         var multi = []
         for (var i = 0; i < lines.length; i++) {
           var bit = lines[i]
-          if (item && item.stale && i === lines.length - 1) bit += " · cached"
+          if (item && item.stale && i === lines.length - 1) bit += " · " + root.tr("tip.cached")
           multi.push({ text: bit, severity: sev })
         }
         return multi
       }
       var single = Model.providerName(item)
       if (lines.length === 1) single += " · " + lines[0]
-      if (item && item.stale) single += " · cached"
+      if (item && item.stale) single += " · " + root.tr("tip.cached")
       return [{ text: single, severity: sev }]
     }
 
@@ -602,7 +621,7 @@ Panel {
       return chips
     }
     if (!entry) {
-      var msg = Model.autoTextSafe(statusMessage() || "AI usage")
+      var msg = Model.autoTextSafe(statusMessage() || root.tr("app.name"))
       return msg !== "" ? [{ text: msg, severity: "" }] : []
     }
     return rowsFor(entry)
@@ -619,7 +638,7 @@ Panel {
       }
       if (lines.length > 0) return lines.join("\n")
     }
-    return Model.autoTextSafe(statusMessage() || "AI usage")
+    return Model.autoTextSafe(statusMessage() || root.tr("app.name"))
   }
 
   onEntriesChanged: Qt.callLater(syncSelection)
@@ -756,12 +775,15 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: root.settingsOpen ? "Settings"
-              : (root.entry ? Model.providerName(root.entry) : "AI usage")
-            meta: root.settingsOpen ? "Display, provider & API keys" : root.heroMeta()
-            detail: root.settingsOpen
-              ? "Existing configuration stays in place until you save."
-              : (root.entry && root.summary.text !== "Ready" ? Model.autoTextSafe(root.panelHeadline(root.entry)) : "")
+            title: root.settingsOpen ? root.tr("hero.settings")
+              : (root.entry ? Model.providerName(root.entry) : root.tr("app.name"))
+            meta: root.settingsOpen ? root.tr("hero.settings_meta") : root.heroMeta()
+            // Long settings copy must not live in the hero detail pill — that
+            // control is a single-line chip and overflows in RU/pt-BR. The
+            // sentence renders as a wrapped caption under the hero instead.
+            detail: root.settingsOpen ? ""
+              : (root.entry && root.summary.text !== "Ready" && root.summary.text !== root.tr("ready")
+                ? Model.autoTextSafe(root.panelHeadline(root.entry)) : "")
             foreground: root.foreground
             fontFamily: root.fontFamily
 
@@ -787,7 +809,7 @@ Panel {
                 PanelActionButton {
                   visible: !root.settingsOpen
                   iconText: "󰑐"
-                  tooltipText: "Refresh usage"
+                  tooltipText: root.tr("action.refresh")
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   enabled: !usageProcess.running
@@ -796,13 +818,24 @@ Panel {
 
                 PanelActionButton {
                   iconText: root.settingsOpen ? "󰁍" : "󰒓"
-                  tooltipText: root.settingsOpen ? "Back to usage" : "Settings"
+                  tooltipText: root.settingsOpen ? root.tr("action.back") : root.tr("action.settings")
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   onClicked: root.settingsOpen ? root.closeSettings() : root.openSettings()
                 }
               }
             }
+          }
+
+          Text {
+            visible: root.settingsOpen
+            width: parent.width
+            text: root.tr("hero.settings_detail")
+            textFormat: Text.PlainText
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
           }
 
           SettingsView {
@@ -816,12 +849,15 @@ Panel {
             showProvider: root.showProvider
             showAll: root.showAll
             colorCodeUsage: root.colorCodeUsage
+            uiLocale: root.uiLocale
+            uiLocaleSetting: root.uiLocaleSetting
             barWindow: root.barWindow
             onSaved: root.startRefresh()
             onShowValueRequested: function(enabled) { root.setShowValue(enabled) }
             onShowProviderRequested: function(enabled) { root.setShowProvider(enabled) }
             onShowAllRequested: function(enabled) { root.setShowAll(enabled) }
             onColorCodeUsageRequested: function(enabled) { root.setColorCodeUsage(enabled) }
+            onUiLocaleRequested: function(value) { root.setUiLocale(value) }
             onBarWindowRequested: function(value) { root.setBarWindow(value) }
             onFallbackRequested: root.openTerminalSettings()
             onNousLoginRequested: root.openNousLogin()
@@ -927,14 +963,14 @@ Panel {
             spacing: Style.space(8)
 
             PanelSectionHeader {
-              text: "USAGE"
+              text: root.tr("section.usage")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
 
             Text {
               width: parent.width
-              text: "Collecting configured providers…"
+              text: root.tr("loading.providers")
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -954,7 +990,7 @@ Panel {
             }
 
             PanelSectionHeader {
-              text: "USAGE & BALANCE"
+              text: root.tr("section.usage_balance")
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -1002,7 +1038,7 @@ Panel {
             visible: !root.settingsOpen && !root.loading && !root.entry && root.statusMessage() === ""
             width: parent.width
             topPadding: Style.space(20)
-            text: "No configured provider reported usage."
+            text: root.tr("empty.no_usage")
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -1014,7 +1050,7 @@ Panel {
             visible: !root.settingsOpen && root.entryFetchedAt !== ""
             width: parent.width
             topPadding: Style.space(2)
-            text: Model.formatUpdated(root.entryFetchedAt, root.nowMs)
+            text: I18n.formatUpdated(root.entryFetchedAt, root.nowMs, root.uiLocale)
               + (usageProcess.running ? " · refreshing…" : "")
             color: root.dim
             font.family: root.fontFamily
@@ -1045,8 +1081,8 @@ Panel {
       ? root.alpha(root.foreground, 0.38)
       : metricRow.ragColor
     readonly property int indent: grouped ? Style.space(10) : 0
-    readonly property string detailText: Model.metricDetail(row)
-    readonly property string resetText: row ? Model.formatReset(row.reset_at, root.nowMs) : ""
+    readonly property string detailText: I18n.displayDetail(root.uiLocale, Model.metricDetail(row))
+    readonly property string resetText: row ? I18n.formatReset(row.reset_at, root.nowMs, root.uiLocale) : ""
 
     spacing: Style.space(grouped ? 4 : 6)
 
@@ -1056,7 +1092,7 @@ Panel {
 
       Text {
         id: metricLabel
-        text: metricRow.row ? metricRow.row.label : ""
+        text: metricRow.row ? I18n.displayLabel(root.uiLocale, metricRow.row.label) : ""
         textFormat: Text.PlainText
         color: metricRow.labelColor
         font.family: root.fontFamily
@@ -1156,7 +1192,7 @@ Panel {
     Text {
       id: detailLabel
       visible: !detailRow.heading && text !== ""
-      text: detailRow.row ? detailRow.row.label : ""
+      text: detailRow.row ? I18n.displayLabel(root.uiLocale, detailRow.row.label) : ""
       textFormat: Text.PlainText
       color: root.foreground
       font.family: root.fontFamily
