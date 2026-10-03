@@ -1118,6 +1118,10 @@ func testApiKeyAccounts() {
                 "Preferences includes named API-key accounts")
     assertEqual(accountLabels(inTOML: "[[kilo.accounts]]\nlabel = \"team\"\n", vendor: "kilo"), ["team"],
                 "any vendor's array is parsed")
+    assertEqual(API_KEY_ACCOUNT_VENDORS.contains("deepinfra"), true,
+                "deepinfra is in API_KEY_ACCOUNT_VENDORS")
+    assertEqual(API_KEY_ACCOUNT_VENDORS.count, 10,
+                "ten API-key account vendors match Rust Config::API_KEY_ACCOUNT_VENDORS")
 }
 
 func testEnableVendorCommand() {

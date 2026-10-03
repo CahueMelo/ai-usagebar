@@ -37,6 +37,12 @@ Each release is also published at
   it. The spacer is gone; the row's spacing is the gap again, and an icon-only
   chip still collapses to the mark alone.
 
+- **macOS menu bar parses DeepInfra named accounts.**
+  PR #291 added named account support to DeepInfra in Rust, but
+  `API_KEY_ACCOUNT_VENDORS` in the macOS menu bar was not updated. It now
+  includes `deepinfra` so `[[deepinfra.accounts]]` entries appear as menu
+  choices and in Preferences.
+
 ## [1.30.0] — 2026-10-01
 
 ### Added

@@ -1103,7 +1103,7 @@ func claudeAccountLabels() -> [String] {
 /// The API-key vendors whose config takes a `[[<vendor>.accounts]]` array —
 /// Rust's `Config::API_KEY_ACCOUNT_VENDORS`, by slug.
 let API_KEY_ACCOUNT_VENDORS = [
-    "zai", "openrouter", "deepseek", "kilo", "novita", "moonshot", "grok", "minimax", "orcarouter",
+    "zai", "openrouter", "deepseek", "deepinfra", "kilo", "novita", "moonshot", "grok", "minimax", "orcarouter",
 ]
 
 /// Explicit `[[<vendor>.accounts]]` labels for one API-key vendor.

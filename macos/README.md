@@ -245,7 +245,7 @@ Selecting an entry changes whose usage is displayed, not the active Codex login.
 ## Multiple API-key accounts
 
 Entries from `[[openrouter.accounts]]` — and the same array under `[zai]`,
-`[deepseek]`, `[kilo]`, `[novita]`, `[moonshot]`, `[grok]`, `[minimax]`, and
+`[deepseek]`, `[deepinfra]`, `[kilo]`, `[novita]`, `[moonshot]`, `[grok]`, `[minimax]`, and
 `[orcarouter]` — appear as separate menu choices and use
 `--vendor <vendor> --account <label>` behind the scenes. Each account keeps its
 own cache. Set `show_default_account = false` in the provider's section when
