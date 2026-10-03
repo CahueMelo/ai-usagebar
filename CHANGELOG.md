@@ -43,6 +43,15 @@ Each release is also published at
   includes `deepinfra` so `[[deepinfra.accounts]]` entries appear as menu
   choices and in Preferences.
 
+- **Provider catalog and detection recognize named accounts and path overrides.**
+  `ai-usagebar vendors --json` and the TUI/macOS provider views reported
+  providers as unconfigured ("needs credential") when authentication was
+  configured via named accounts (`[[<vendor>.accounts]]`) without setting the
+  ambient key, or when `show_default_account = false` was set. The catalog now
+  checks named API-key accounts as well as Anthropic and OpenAI named accounts
+  and path overrides (`credentials_path`, `codex_auth_path`), matching the
+  credential resolution of the fetch and `detect` (#307).
+
 ## [1.30.0] — 2026-10-01
 
 ### Added

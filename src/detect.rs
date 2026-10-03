@@ -42,10 +42,15 @@ pub fn has_local_credentials(vendor: VendorId, config: &Config) -> bool {
     match vendor {
         VendorId::Anthropic => anthropic_present(config),
         VendorId::AnthropicApi => key_present(config, vendor),
-        VendorId::Openai => config
-            .openai
-            .resolve_auth_path(None)
-            .is_ok_and(|path| crate::openai::creds::read_from(&path).is_ok()),
+        VendorId::Openai => {
+            config
+                .openai
+                .resolve_auth_path(None)
+                .is_ok_and(|path| crate::openai::creds::read_from(&path).is_ok())
+                || config.openai.accounts.iter().any(|account| {
+                    crate::openai::creds::read_from(&account.codex_auth_path).is_ok()
+                })
+        }
         VendorId::Copilot => copilot_present(),
         VendorId::Zai => key_present(config, vendor),
         VendorId::Openrouter => key_present(config, vendor),
@@ -131,6 +136,7 @@ fn key_present(config: &Config, vendor: VendorId) -> bool {
 /// The default Claude account exactly as the fetch resolves it: an explicit
 /// `credentials_path` is a strict file read; the platform default adds the
 /// macOS Keychain fallback inside `creds::resolve` (gated there, not here).
+/// Any named account with a resolvable credential counts as present too.
 fn anthropic_present(config: &Config) -> bool {
     use crate::anthropic::creds::{CredsTarget, default_path, resolve};
     let target = match config.anthropic.credentials_path.clone() {
@@ -141,6 +147,13 @@ fn anthropic_present(config: &Config) -> bool {
         },
     };
     resolve(&target).is_ok()
+        || config.anthropic.all_accounts().iter().any(|account| {
+            resolve(&CredsTarget::Named {
+                path: account.credentials_path.clone(),
+                config_dir: account.config_dir(),
+            })
+            .is_ok()
+        })
 }
 
 /// GitHub Copilot detection is a **new** heuristic, deliberately different
@@ -572,6 +585,51 @@ mod tests {
         // Another vendor's array is not this vendor's credential.
         config.kilo.api_key_env.clear();
         assert!(!key_present(&config, VendorId::Kilo));
+    }
+
+    #[test]
+    fn a_named_anthropic_account_alone_counts_as_a_credential() {
+        let dir = TempDir::new().unwrap();
+        let creds_file = dir.path().join("work.json");
+        std::fs::write(
+            &creds_file,
+            r#"{"claudeAiOauth":{"accessToken":"tok","refreshToken":"ref","expiresAt":2000000000000}}"#,
+        )
+        .unwrap();
+
+        let mut config = Config::default();
+        config.anthropic.credentials_path = Some(dir.path().join("absent.json"));
+        assert!(!anthropic_present(&config));
+
+        config
+            .anthropic
+            .accounts
+            .push(crate::config::AnthropicAccount {
+                label: "work".into(),
+                credentials_path: creds_file,
+            });
+        assert!(anthropic_present(&config));
+    }
+
+    #[test]
+    fn a_named_openai_account_alone_counts_as_a_credential() {
+        let dir = TempDir::new().unwrap();
+        let auth_file = dir.path().join("work-auth.json");
+        std::fs::write(
+            &auth_file,
+            r#"{"tokens":{"access_token":"a","refresh_token":"r","id_token":"i"}}"#,
+        )
+        .unwrap();
+
+        let mut config = Config::default();
+        config.openai.codex_auth_path = Some(dir.path().join("absent.json"));
+        assert!(!has_local_credentials(VendorId::Openai, &config));
+
+        config.openai.accounts.push(crate::config::OpenAiAccount {
+            label: "work".into(),
+            codex_auth_path: auth_file,
+        });
+        assert!(has_local_credentials(VendorId::Openai, &config));
     }
 
     #[test]
