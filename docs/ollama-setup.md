@@ -71,7 +71,8 @@ ai-usagebar-tui
 
 Default bar format: `{oll_session_pct}% · {oll_weekly_pct}%w`. Accounts that
 report `limits.monthly` instead render `{oll_monthly_pct}%` there — see
-"What the bar shows" below.
+"What the bar shows" below. Placeholders for a window the account omitted
+are empty (not `0`), so a native menu bar cannot paint a fake 0% 5h/7d pair.
 
 ## What the bar shows
 

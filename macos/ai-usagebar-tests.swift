@@ -467,6 +467,33 @@ func testParserBalances() {
     assertEqual(ollama?.weekly?.pct, 23, "ollama weekly pct")
     assertEqual(ollama?.weeklyLabel, "Weekly", "ollama weekly label")
     assertEqual(ollama?.weekly?.elapsed, 45, "ollama weekly elapsed")
+    assertNil(ollama?.sonnet, "session/weekly ollama has no monthly bar")
+
+    // Monthly-only shape: session/weekly placeholders stay empty (not "0"),
+    // monthly rides the primary bar. A present window at 0% used is still 0.
+    let ollamaMonthly = snapshot(FORMAT, vendor: "ollama",
+                                 fields: fields(through: 51, set: [
+                                    0: "pro", 16: "oll", 50: "42", 51: "—"
+                                 ]))
+    assertEqual(ollamaMonthly?.hasUsageWindows, true, "ollama monthly shows a window")
+    assertEqual(ollamaMonthly?.session?.pct, 42, "ollama monthly pct on the primary bar")
+    assertEqual(ollamaMonthly?.sessionLabel, "Monthly", "ollama monthly label")
+    assertEqual(ollamaMonthly?.sessionTag, "mo", "ollama monthly tag")
+    assertNil(ollamaMonthly?.weekly, "ollama monthly suppresses fake 5h/7d")
+    assertNil(ollamaMonthly?.sonnet, "ollama monthly is not a third-slot bar")
+
+    let ollamaMonthlyZero = snapshot(FORMAT, vendor: "ollama",
+                                     fields: fields(through: 51, set: [
+                                        0: "pro", 16: "oll", 50: "0"
+                                     ]))
+    assertEqual(ollamaMonthlyZero?.session?.pct, 0, "present 0% monthly is real usage")
+    assertEqual(ollamaMonthlyZero?.sessionLabel, "Monthly", "zero monthly keeps the label")
+    assertNil(ollamaMonthlyZero?.weekly, "zero monthly still has no 5h/7d")
+
+    let ollamaEmpty = snapshot(FORMAT, vendor: "ollama",
+                               fields: fields(through: 16, set: [0: "pro", 16: "oll"]))
+    assertNil(ollamaEmpty?.session, "omitted windows are not 0% session")
+    assertNil(ollamaEmpty?.weekly, "omitted windows are not 0% weekly")
 
     let sgk = snapshot(FORMAT, vendor: "supergrok",
                        fields: fields(through: 40, set: [

@@ -87,8 +87,10 @@ let POINT_CRITICAL_MIN = 10
 // populated — and the `aapi_*` fields (23-26) carry the Anthropic API headline
 // plus its spend-vs-limit bar. `cursor_total_pct` (27) is followed by the
 // Antigravity-only fourth-window fields (28-30) and the Z.AI MCP-tools pool
-// (31-33), which fills that same fourth-window slot. A final literal sentinel
-// absorbs the widget's stale suffix, preserving these fields.
+// (31-33), which fills that same fourth-window slot. `{oll_monthly_pct}` /
+// `{oll_monthly_reset}` (50-51) carry Ollama Cloud's calendar-month pool;
+// empty when the account reports session/weekly instead. A final literal
+// sentinel absorbs the widget's stale suffix, preserving these fields.
 let FORMAT = "{plan};;{session_pct};;{session_reset};;{weekly_pct};;{weekly_reset};;" +
              "{sonnet_pct};;{sonnet_reset};;{extra_pct};;{extra_spent};;{extra_limit};;" +
              "{scoped_model};;{scoped_pct};;{scoped_reset};;" +
@@ -102,7 +104,8 @@ let FORMAT = "{plan};;{session_pct};;{session_reset};;{weekly_pct};;{weekly_rese
              "{copilot_completions_pct};;{copilot_reset};;" +
              "{sgk_period};;{minimax_video_pct};;{minimax_video_reset};;" +
              "{minimax_video_elapsed};;{minimax_video_weekly_pct};;{minimax_video_weekly_reset};;{minimax_video_weekly_elapsed};;" +
-             "{copilot_chat_limit};;{copilot_completions_limit};;{copilot_premium_limit}"
+             "{copilot_chat_limit};;{copilot_completions_limit};;{copilot_premium_limit};;" +
+             "{oll_monthly_pct};;{oll_monthly_reset}"
 
 let FORMAT_WITH_SENTINEL = FORMAT + ";;__aiub_end__"
 
@@ -657,6 +660,26 @@ func parse(_ text: String, vendor: String) -> Snapshot? {
         weeklyTag = "7d"
         sessionLabel = "Usage"
         weeklyLabel = ""
+    case "ollama":
+        // Monthly-only accounts omit session/weekly (empty placeholders, not
+        // "0"). Surface that pool on the primary bar — the title never draws
+        // the third/sonnet slot — matching Nous/Kiro's single-pool dispatch.
+        // A present window at 0% used still parses as 0.
+        if sessionWindow == nil, quotaWindow(3, 4, 14) == nil,
+           let monthly = quotaWindow(50, 51, -1) {
+            sessionWindow = monthly
+            weeklyWindow = nil
+            sessionTag = "mo"
+            weeklyTag = "7d"
+            sessionLabel = "Monthly"
+            weeklyLabel = ""
+        } else {
+            weeklyWindow = quotaWindow(3, 4, 14)
+            sessionTag = "5h"
+            weeklyTag = "7d"
+            sessionLabel = "Session"
+            weeklyLabel = "Weekly"
+        }
     case "kiro":
         weeklyWindow = nil
         sessionTag = "cr"
