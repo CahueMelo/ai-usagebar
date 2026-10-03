@@ -580,6 +580,7 @@ mod tests {
             label: "work".into(),
             api_key_env: None,
             api_key: Some("work-key".into()),
+            management_api_key_env: None,
         });
         assert!(key_present(&config, VendorId::Deepseek));
         // Another vendor's array is not this vendor's credential.

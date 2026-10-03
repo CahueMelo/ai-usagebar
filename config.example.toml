@@ -238,6 +238,11 @@ api_key_env = "ZAI_API_KEY"      # checked first; if set + non-empty, used
 enabled = true
 api_key_env = "OPENROUTER_API_KEY"
 # api_key = "sk-or-v1-..."
+# Optional management key: unlocks the "Recent models" block, which reads
+# /api/v1/activity — an endpoint that rejects the regular inference key.
+# Create one at https://openrouter.ai/settings/management-keys. Unset, the
+# activity request is skipped and the block stays hidden.
+# management_api_key_env = "OPENROUTER_MANAGEMENT_API_KEY"
 # Which number goes on the bar. OpenRouter reports credits purchased against
 # credits used, so it has a denominator of its own and defaults to "percent";
 # "amount" puts the dollar balance there instead. There is deliberately no
@@ -253,6 +258,7 @@ api_key_env = "OPENROUTER_API_KEY"
 # label = "work"
 # api_key_env = "OPENROUTER_WORK_API_KEY"
 # api_key = "sk-or-v1-..."  # optional fallback; chmod 600 when inline
+# management_api_key_env = "OPENROUTER_WORK_MANAGEMENT_API_KEY"  # optional
 #
 # The same array works for [zai], [deepseek], [deepinfra], [kilo], [novita],
 # [moonshot], [grok], [minimax], and [orcarouter] — e.g.

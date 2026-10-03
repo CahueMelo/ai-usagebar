@@ -28,7 +28,11 @@ Each release is also published at
   per-model cost and request counts alongside the existing spend breakdown in both
   the TUI and the popover. When no quota reset date is published, the meter row
   displays the account's available credit balance in USD ($) directly below the
-  gauge. Full Portuguese (pt-BR) localization support in the popover.
+  gauge. Full Portuguese (pt-BR) localization support in the popover. The
+  activity endpoint requires an OpenRouter *management* key
+  (`management_api_key_env`, default `OPENROUTER_MANAGEMENT_API_KEY`, also per
+  `[[openrouter.accounts]]`); without one the activity request is skipped and
+  the block simply stays hidden.
 
 ### Fixed
 

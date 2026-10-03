@@ -667,10 +667,12 @@ async fn build_outcome(client: &Client, config: &Config, tab: &TabId) -> Result<
         }
         VendorId::Openrouter => {
             let (api_key, cache) = api_key_and_cache(config, vendor, tab.account.as_deref())?;
+            let management_key = config.openrouter_management_key(tab.account.as_deref());
             let endpoints = crate::openrouter::fetch::Endpoints::default();
             let outcome = crate::openrouter::fetch_snapshot(
                 client,
                 &api_key,
+                management_key.as_deref(),
                 &cache,
                 &endpoints,
                 DEFAULT_TTL,
@@ -1247,11 +1249,13 @@ mod tests {
                 label: "work".into(),
                 api_key_env: Some("OPENROUTER_WORK_API_KEY".into()),
                 api_key: None,
+                management_api_key_env: None,
             },
             crate::config::ApiKeyAccount {
                 label: "personal".into(),
                 api_key_env: None,
                 api_key: Some("personal-key".into()),
+                management_api_key_env: None,
             },
         ];
         assert_eq!(
@@ -1304,6 +1308,7 @@ mod tests {
                 label: "work".into(),
                 api_key_env: Some("OPENROUTER_WORK_API_KEY".into()),
                 api_key: None,
+                management_api_key_env: None,
             });
         assert_eq!(
             tabs_from_config(&config),

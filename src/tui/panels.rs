@@ -2462,6 +2462,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn openrouter_recent_models_block_renders_only_when_present() {
+        let snap = |recent_models: Vec<String>| OpenRouterSnapshot {
+            label: "OR".into(),
+            total_credits: 100.0,
+            total_usage: 25.0,
+            usage_daily: 1.0,
+            usage_weekly: 5.0,
+            usage_monthly: 25.0,
+            is_free_tier: false,
+            limit: None,
+            limit_remaining: None,
+            recent_models,
+        };
+        let models = vec!["gpt-5-codex ($1.25 · 42 reqs)".to_string()];
+        let sections = sections_for(
+            &ready(VendorSnapshot::Openrouter(snap(models.clone()))),
+            now(),
+            5,
+        );
+        let block = sections.iter().find_map(|s| match s {
+            Section::Block { label, body } if label == "Recent models" => Some(body),
+            _ => None,
+        });
+        assert_eq!(block, Some(&models));
+
+        let sections = sections_for(
+            &ready(VendorSnapshot::Openrouter(snap(Vec::new()))),
+            now(),
+            5,
+        );
+        assert!(
+            !sections
+                .iter()
+                .any(|s| matches!(s, Section::Block { label, .. } if label == "Recent models"))
+        );
+    }
+
     /// #118 reached every frontend, not just Waybar: the panel row is what the
     /// Omarchy, GNOME and KDE plugins colour and label from, so the debt has to
     /// survive the projection with its sign and its severity intact.

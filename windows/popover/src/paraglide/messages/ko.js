@@ -56,6 +56,7 @@
 /** @typedef {{}} Couldnt_Check_For_Updates_TitleInputs */
 /** @typedef {{}} Couldnt_Update_TitleInputs */
 /** @typedef {{}} CountdownInputs */
+/** @typedef {{}} Credit_BalanceInputs */
 /** @typedef {{}} CreditsInputs */
 /** @typedef {{}} Current_UsageInputs */
 /** @typedef {{}} CustomizeInputs */
@@ -168,6 +169,7 @@
 /** @typedef {{}} Quota_Alerts_HintInputs */
 /** @typedef {{}} Rate_Limit_ResetsInputs */
 /** @typedef {{ version: NonNullable<unknown> }} Ready_To_InstallInputs */
+/** @typedef {{}} Recent_ModelsInputs */
 /** @typedef {{}} RefreshInputs */
 /** @typedef {{}} Refresh_EveryInputs */
 /** @typedef {{}} Refresh_Interval_HintInputs */
@@ -209,6 +211,7 @@
 /** @typedef {{}} SystemInputs */
 /** @typedef {{}} ThemeInputs */
 /** @typedef {{}} This_BuildInputs */
+/** @typedef {{}} TierInputs */
 /** @typedef {{}} Time_FormatInputs */
 /** @typedef {{}} Time_Format_HintInputs */
 /** @typedef {{ time: NonNullable<unknown> }} Today_AtInputs */
@@ -240,6 +243,7 @@
 /** @typedef {{}} Usage_And_Balance_HeadingInputs */
 /** @typedef {{}} Usage_And_Balance_SubtitleInputs */
 /** @typedef {{}} Usage_And_Balance_TitleInputs */
+/** @typedef {{}} Usage_By_PeriodInputs */
 /** @typedef {{}} Usage_DisplayInputs */
 /** @typedef {{}} Usage_GoalInputs */
 /** @typedef {{}} Usage_Goal_HintInputs */
@@ -480,6 +484,10 @@ export const couldnt_update_title = /** @type {(inputs: Couldnt_Update_TitleInpu
 
 export const countdown = /** @type {(inputs: CountdownInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`남은 시간`)
+};
+
+export const credit_balance = /** @type {(inputs: Credit_BalanceInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`크레딧 잔액`)
 };
 
 export const credits = /** @type {(inputs: CreditsInputs) => LocalizedString} */ () => {
@@ -930,6 +938,10 @@ export const ready_to_install = /** @type {(inputs: Ready_To_InstallInputs) => L
 	return /** @type {LocalizedString} */ (`AI Usage ${i?.version}을(를) 설치할 준비가 되었습니다.`)
 };
 
+export const recent_models = /** @type {(inputs: Recent_ModelsInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`최근 모델`)
+};
+
 export const refresh = /** @type {(inputs: RefreshInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`새로 고침`)
 };
@@ -1094,6 +1106,10 @@ export const this_build = /** @type {(inputs: This_BuildInputs) => LocalizedStri
 	return /** @type {LocalizedString} */ (`이 빌드`)
 };
 
+export const tier = /** @type {(inputs: TierInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`등급`)
+};
+
 export const time_format = /** @type {(inputs: Time_FormatInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`시간 형식`)
 };
@@ -1216,6 +1232,10 @@ export const usage_and_balance_subtitle = /** @type {(inputs: Usage_And_Balance_
 
 export const usage_and_balance_title = /** @type {(inputs: Usage_And_Balance_TitleInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`사용량 및 잔액`)
+};
+
+export const usage_by_period = /** @type {(inputs: Usage_By_PeriodInputs) => LocalizedString} */ () => {
+	return /** @type {LocalizedString} */ (`기간별 사용량`)
 };
 
 export const usage_display = /** @type {(inputs: Usage_DisplayInputs) => LocalizedString} */ () => {

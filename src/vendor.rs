@@ -27,6 +27,7 @@ pub const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 pub(crate) const VENDOR_SECRET_ENV_VARS: &[&str] = &[
     "ZAI_API_KEY",
     "OPENROUTER_API_KEY",
+    "OPENROUTER_MANAGEMENT_API_KEY",
     "DEEPSEEK_API_KEY",
     "DEEPINFRA_API_KEY",
     "KIMI_API_KEY",
@@ -701,6 +702,7 @@ mod tests {
         let configured_defaults = [
             "ZAI_API_KEY",
             "OPENROUTER_API_KEY",
+            "OPENROUTER_MANAGEMENT_API_KEY",
             "DEEPSEEK_API_KEY",
             "DEEPINFRA_API_KEY",
             "KIMI_API_KEY",

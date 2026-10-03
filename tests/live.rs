@@ -271,9 +271,12 @@ async fn openrouter_live() {
         .build()
         .unwrap();
     let endpoints = openrouter::fetch::Endpoints::default();
+    // Optional: the recent-models activity only answers to a management key.
+    let management_key = std::env::var("OPENROUTER_MANAGEMENT_API_KEY").ok();
     let out = openrouter::fetch_snapshot(
         &client,
         &api_key,
+        management_key.as_deref(),
         &cache,
         &endpoints,
         Duration::from_secs(0),

@@ -81,7 +81,6 @@
 /** @typedef {{}} ExpiredInputs */
 /** @typedef {{}} Extra_UsageInputs */
 /** @typedef {{}} For_Menu_BarInputs */
-/** @typedef {{}} Free_TierInputs */
 /** @typedef {{}} GeneralInputs */
 /** @typedef {{}} Global_ShortcutInputs */
 /** @typedef {{}} Global_Shortcut_HintInputs */
@@ -152,7 +151,6 @@
 /** @typedef {{}} OptionsInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Pace_By_ResetInputs */
 /** @typedef {{ duration: NonNullable<unknown> }} Pace_Shows_After_FirstInputs */
-/** @typedef {{}} Paid_TierInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_LeftInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Left_At_ResetInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Over_PaceInputs */
@@ -588,10 +586,6 @@ export const for_menu_bar = /** @type {(inputs: For_Menu_BarInputs) => Localized
 	return /** @type {LocalizedString} */ (`for menu bar`)
 };
 
-export const free_tier = /** @type {(inputs: Free_TierInputs) => LocalizedString} */ () => {
-	return /** @type {LocalizedString} */ (`Free tier`)
-};
-
 export const general = /** @type {(inputs: GeneralInputs) => LocalizedString} */ () => {
 	return /** @type {LocalizedString} */ (`General`)
 };
@@ -870,10 +864,6 @@ export const pace_by_reset = /** @type {(inputs: Pace_By_ResetInputs) => Localiz
 
 export const pace_shows_after_first = /** @type {(inputs: Pace_Shows_After_FirstInputs) => LocalizedString} */ (i) => {
 	return /** @type {LocalizedString} */ (`The pace shows after the first ${i?.duration} of each window.`)
-};
-
-export const paid_tier = /** @type {(inputs: Paid_TierInputs) => LocalizedString} */ () => {
-	return /** @type {LocalizedString} */ (`Paid tier`)
 };
 
 export const percent_left = /** @type {(inputs: Percent_LeftInputs) => LocalizedString} */ (i) => {

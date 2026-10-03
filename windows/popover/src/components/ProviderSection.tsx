@@ -128,8 +128,6 @@ export function ProviderSection({
         />
       ) : row.kind === "resetCredits" ? (
         <ResetCreditsRow key={key} condensedTop={condensed.has(index)} demand={demand} layout={layout} nowMs={nowMs} row={row} />
-      ) : isRecentModels(row) ? (
-        <RecentModelsRow key={key} condensedTop={condensed.has(index)} demand={demand} row={row} />
       ) : (
         <TextRow key={key} condensedTop={condensed.has(index)} demand={demand} row={row} />
       );
@@ -435,20 +433,6 @@ function UsageMetricRow({ demand, layout, nowMs, onToggleShowAs, row }: MetricRo
         <span className="min-w-[var(--gap-controls)] flex-1" />
         {reset ? (
           <TruncatedText align="end" className="text-label-2" hint={resetHint}>{reset}</TruncatedText>
-        ) : row.value ? (
-          <TruncatedText
-            align="end"
-            className="text-label-2"
-            hint={translateUsage(language, row.detail || row.value)}
-          >
-            {row.headline === "value"
-              ? translateUsage(
-                  language,
-                  (layout.showAs === "used" ? row.usedPercent : row.leftPercent) +
-                    (layout.showAs === "used" ? "% used" : "% left")
-                )
-              : row.value}
-          </TruncatedText>
         ) : null}
       </div>
       {goal ? (
@@ -481,12 +465,12 @@ interface TextRowProps {
 
 /** Unbounded row: no bar. Label on the left, the value (or block lines) right-aligned. */
 function TextRow({ condensedTop, demand, row }: TextRowProps) {
-  const { metricLabel, rowValue } = useI18n();
+  const { metricLabel } = useI18n();
   const lines = row.kind === "block" ? row.body : [row.value];
   return (
     <div
       className={cn(
-        "flex items-baseline gap-[var(--row-gap)] px-[var(--card-pad)] pb-[var(--pad-text-row)]",
+        "flex items-start gap-[var(--row-gap)] px-[var(--card-pad)] pb-[var(--pad-text-row)]",
         condensedTop ? "pt-[var(--pad-text-row-condensed)]" : "pt-[var(--pad-text-row)]",
       )}
     >
@@ -494,60 +478,11 @@ function TextRow({ condensedTop, demand, row }: TextRowProps) {
       <span className="min-w-[var(--gap-controls)] flex-1" />
       <span className="flex min-w-0 max-w-full flex-col items-end gap-[var(--gap-tight)] text-right text-[length:var(--sz-support)] tabular-nums">
         {lines.map((line, index) => (
-          <span key={index} className="max-w-full truncate whitespace-nowrap text-label-2" title={rowValue(line)}>
-            {rowValue(line)}
+          <span key={index} className="max-w-full break-words [overflow-wrap:anywhere]">
+            {line}
           </span>
         ))}
       </span>
-    </div>
-  );
-}
-
-function isRecentModels(row: Row): row is BlockRow {
-  return row.kind === "block" && /^recent models$/i.test(row.label || "");
-}
-
-interface RecentModelsRowProps {
-  condensedTop?: boolean;
-  demand?: boolean;
-  row: BlockRow;
-}
-
-function RecentModelsRow({ condensedTop, demand, row }: RecentModelsRowProps) {
-  const { metricLabel, rowValue } = useI18n();
-  const items = row.body;
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-1.5 px-[var(--card-pad)] pb-[var(--pad-text-row)]",
-        condensedTop ? "pt-[var(--pad-text-row-condensed)]" : "pt-[var(--pad-text-row)]",
-      )}
-    >
-      <span className={cn("shrink-0 font-semibold", demand ? "text-[length:var(--sz-demand)]" : "text-[length:var(--sz-label)]")}>
-        {metricLabel(row.label)}
-      </span>
-      <div className="flex flex-col gap-1">
-        {items.map((item, index) => {
-          const match = /^(.+?)\s*\((.+)\)$/.exec(item);
-          const name = match ? match[1] : item;
-          const stats = match ? match[2] : "";
-          return (
-            <div
-              key={index}
-              className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-[var(--control-fill)] px-[var(--control-px-sm)] py-1 text-[length:var(--sz-support)] tabular-nums whitespace-nowrap overflow-hidden"
-            >
-              <span className="font-medium text-foreground truncate min-w-0 whitespace-nowrap flex-1 text-left" title={name}>
-                {name}
-              </span>
-              {stats ? (
-                <span className="shrink-0 whitespace-nowrap text-label-2 font-normal text-[length:var(--sz-badge)] ml-auto text-right">
-                  {rowValue(stats)}
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

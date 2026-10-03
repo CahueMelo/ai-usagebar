@@ -83,7 +83,6 @@ import { getLocale, experimentalStaticLocale } from "../runtime.js"
 /** @typedef {{}} ExpiredInputs */
 /** @typedef {{}} Extra_UsageInputs */
 /** @typedef {{}} For_Menu_BarInputs */
-/** @typedef {{}} Free_TierInputs */
 /** @typedef {{}} GeneralInputs */
 /** @typedef {{}} Global_ShortcutInputs */
 /** @typedef {{}} Global_Shortcut_HintInputs */
@@ -154,7 +153,6 @@ import { getLocale, experimentalStaticLocale } from "../runtime.js"
 /** @typedef {{}} OptionsInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Pace_By_ResetInputs */
 /** @typedef {{ duration: NonNullable<unknown> }} Pace_Shows_After_FirstInputs */
-/** @typedef {{}} Paid_TierInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_LeftInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Left_At_ResetInputs */
 /** @typedef {{ percent: NonNullable<unknown> }} Percent_Over_PaceInputs */
@@ -1119,12 +1117,13 @@ export const countdown = /** @type {((inputs?: CountdownInputs, options?: { loca
 * | "Credit balance" |
 *
 * @param {Credit_BalanceInputs} inputs
-* @param {{ locale?: "en" | "pt-BR" }} options
+* @param {{ locale?: "en" | "pt-BR" | "ko" }} options
 * @returns {LocalizedString}
 */
-export const credit_balance = /** @type {((inputs?: Credit_BalanceInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Credit_BalanceInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs = {}, options = {}) => {
+export const credit_balance = /** @type {((inputs?: Credit_BalanceInputs, options?: { locale?: "en" | "pt-BR" | "ko" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Credit_BalanceInputs, { locale?: "en" | "pt-BR" | "ko" }, {}>} */ ((inputs = {}, options = {}) => {
 	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
 	if (locale === "pt-BR") return __pt_br2.credit_balance(inputs)
+	if (locale === "ko") return __ko.credit_balance(inputs)
 	return __en.credit_balance(inputs)
 });
 /**
@@ -1486,20 +1485,6 @@ export const for_menu_bar = /** @type {((inputs?: For_Menu_BarInputs, options?: 
 	if (locale === "pt-BR") return __pt_br2.for_menu_bar(inputs)
 	if (locale === "ko") return __ko.for_menu_bar(inputs)
 	return __en.for_menu_bar(inputs)
-});
-/**
-* | output |
-* | --- |
-* | "Free tier" |
-*
-* @param {Free_TierInputs} inputs
-* @param {{ locale?: "en" | "pt-BR" }} options
-* @returns {LocalizedString}
-*/
-export const free_tier = /** @type {((inputs?: Free_TierInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Free_TierInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs = {}, options = {}) => {
-	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
-	if (locale === "pt-BR") return __pt_br2.free_tier(inputs)
-	return __en.free_tier(inputs)
 });
 /**
 * | output |
@@ -2554,20 +2539,6 @@ export const pace_shows_after_first = /** @type {((inputs: Pace_Shows_After_Firs
 /**
 * | output |
 * | --- |
-* | "Paid tier" |
-*
-* @param {Paid_TierInputs} inputs
-* @param {{ locale?: "en" | "pt-BR" }} options
-* @returns {LocalizedString}
-*/
-export const paid_tier = /** @type {((inputs?: Paid_TierInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Paid_TierInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs = {}, options = {}) => {
-	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
-	if (locale === "pt-BR") return __pt_br2.paid_tier(inputs)
-	return __en.paid_tier(inputs)
-});
-/**
-* | output |
-* | --- |
 * | "{percent}% left" |
 *
 * @param {Percent_LeftInputs} inputs
@@ -2841,12 +2812,13 @@ export const ready_to_install = /** @type {((inputs: Ready_To_InstallInputs, opt
 * | "Recent models" |
 *
 * @param {Recent_ModelsInputs} inputs
-* @param {{ locale?: "en" | "pt-BR" }} options
+* @param {{ locale?: "en" | "pt-BR" | "ko" }} options
 * @returns {LocalizedString}
 */
-export const recent_models = /** @type {((inputs?: Recent_ModelsInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Recent_ModelsInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs = {}, options = {}) => {
+export const recent_models = /** @type {((inputs?: Recent_ModelsInputs, options?: { locale?: "en" | "pt-BR" | "ko" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Recent_ModelsInputs, { locale?: "en" | "pt-BR" | "ko" }, {}>} */ ((inputs = {}, options = {}) => {
 	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
 	if (locale === "pt-BR") return __pt_br2.recent_models(inputs)
+	if (locale === "ko") return __ko.recent_models(inputs)
 	return __en.recent_models(inputs)
 });
 /**
@@ -3470,12 +3442,13 @@ export const this_build = /** @type {((inputs?: This_BuildInputs, options?: { lo
 * | "Tier" |
 *
 * @param {TierInputs} inputs
-* @param {{ locale?: "en" | "pt-BR" }} options
+* @param {{ locale?: "en" | "pt-BR" | "ko" }} options
 * @returns {LocalizedString}
 */
-export const tier = /** @type {((inputs?: TierInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<TierInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs = {}, options = {}) => {
+export const tier = /** @type {((inputs?: TierInputs, options?: { locale?: "en" | "pt-BR" | "ko" }) => LocalizedString) & import('../runtime.js').MessageMetadata<TierInputs, { locale?: "en" | "pt-BR" | "ko" }, {}>} */ ((inputs = {}, options = {}) => {
 	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
 	if (locale === "pt-BR") return __pt_br2.tier(inputs)
+	if (locale === "ko") return __ko.tier(inputs)
 	return __en.tier(inputs)
 });
 /**
@@ -3949,12 +3922,13 @@ export const usage_and_balance_title = /** @type {((inputs?: Usage_And_Balance_T
 * | "Usage by period" |
 *
 * @param {Usage_By_PeriodInputs} inputs
-* @param {{ locale?: "en" | "pt-BR" }} options
+* @param {{ locale?: "en" | "pt-BR" | "ko" }} options
 * @returns {LocalizedString}
 */
-export const usage_by_period = /** @type {((inputs?: Usage_By_PeriodInputs, options?: { locale?: "en" | "pt-BR" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Usage_By_PeriodInputs, { locale?: "en" | "pt-BR" }, {}>} */ ((inputs = {}, options = {}) => {
+export const usage_by_period = /** @type {((inputs?: Usage_By_PeriodInputs, options?: { locale?: "en" | "pt-BR" | "ko" }) => LocalizedString) & import('../runtime.js').MessageMetadata<Usage_By_PeriodInputs, { locale?: "en" | "pt-BR" | "ko" }, {}>} */ ((inputs = {}, options = {}) => {
 	const locale = experimentalStaticLocale ?? options.locale ?? getLocale()
 	if (locale === "pt-BR") return __pt_br2.usage_by_period(inputs)
+	if (locale === "ko") return __ko.usage_by_period(inputs)
 	return __en.usage_by_period(inputs)
 });
 /**

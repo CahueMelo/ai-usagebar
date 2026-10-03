@@ -1148,6 +1148,11 @@ pub struct OpenRouterConfig {
     pub show_default_account: bool,
     pub api_key_env: String,
     pub api_key: Option<String>,
+    /// Env var name for the optional OpenRouter *management* key. Only the
+    /// `GET /api/v1/activity` call (recent models) uses it; when it resolves
+    /// to nothing, that request is skipped instead of fired at a 401. The
+    /// regular inference key is never sent to `/activity`.
+    pub management_api_key_env: String,
     /// Which number goes on the bar. OpenRouter states its own denominator —
     /// credits purchased — so it is a quota vendor and defaults to `percent`.
     /// See [`DisplayPrefs`].
@@ -1170,6 +1175,7 @@ impl Default for OpenRouterConfig {
             show_default_account: true,
             api_key_env: "OPENROUTER_API_KEY".to_string(),
             api_key: None,
+            management_api_key_env: "OPENROUTER_MANAGEMENT_API_KEY".to_string(),
             headline: Headline::Percent,
         }
     }
@@ -1189,6 +1195,11 @@ pub struct ApiKeyAccount {
     /// Inline fallback when the account environment variable is unset.
     #[serde(default)]
     pub api_key: Option<String>,
+    /// Optional environment variable containing this account's OpenRouter
+    /// management key (unlocks the recent-models activity). Only OpenRouter
+    /// consults it.
+    #[serde(default)]
+    pub management_api_key_env: Option<String>,
 }
 
 /// The `[[<slug>.accounts]]` lookup behind every API-key vendor: find a named
@@ -2341,6 +2352,23 @@ impl Config {
         )
     }
 
+    /// The optional OpenRouter *management* key for the default or a named
+    /// account. `None` means none is configured, in which case the caller
+    /// skips the `/api/v1/activity` request rather than firing a doomed 401 —
+    /// the regular inference key is never sent there. A named account only
+    /// resolves a management key when it names its own
+    /// `management_api_key_env`; it never inherits the default account's.
+    pub fn openrouter_management_key(&self, label: Option<&str>) -> Option<String> {
+        let env_name = match label {
+            Some(label) => api_key_account("openrouter", &self.openrouter.accounts, label)
+                .ok()?
+                .management_api_key_env
+                .as_deref()?,
+            None => self.openrouter.management_api_key_env.as_str(),
+        };
+        optional_api_key(env_name, None)
+    }
+
     /// Bar-number settings for one vendor.
     ///
     /// Only the prepaid-balance vendors declare these; everything else keeps
@@ -2947,6 +2975,7 @@ enabled = true
             label: "work".into(),
             api_key_env: None,
             api_key: Some("<redacted>".into()),
+            management_api_key_env: None,
         });
         assert!(config.has_inline_secrets());
     }
@@ -3803,6 +3832,7 @@ enabled = false
             label: "work".into(),
             api_key_env: None,
             api_key: Some("work-secret".into()),
+            management_api_key_env: None,
         });
         let message = config
             .resolve_account_api_key_for(VendorId::Openrouter, Some("missing"))
@@ -3820,6 +3850,7 @@ enabled = false
             label: "work".into(),
             api_key_env: Some("sk_pasted_secret".into()),
             api_key: None,
+            management_api_key_env: None,
         });
         let _g = env_guard();
         unsafe { std::env::remove_var("sk_pasted_secret") };
@@ -3829,6 +3860,57 @@ enabled = false
             .to_string();
         assert!(message.contains("[[openrouter.accounts]]"));
         assert!(!message.contains("sk_pasted_secret"));
+    }
+
+    #[test]
+    fn openrouter_management_key_resolves_per_account_and_never_inherits() {
+        let mut config = Config::default();
+        config.openrouter.accounts = vec![
+            ApiKeyAccount {
+                label: "work".into(),
+                api_key_env: None,
+                api_key: Some("work-key".into()),
+                management_api_key_env: Some("AI_USAGEBAR_TEST_OR_MGMT_WORK".into()),
+            },
+            ApiKeyAccount {
+                label: "plain".into(),
+                api_key_env: None,
+                api_key: Some("plain-key".into()),
+                management_api_key_env: None,
+            },
+        ];
+        let _g = env_guard();
+        unsafe { std::env::remove_var("OPENROUTER_MANAGEMENT_API_KEY") };
+        unsafe { std::env::set_var("AI_USAGEBAR_TEST_OR_MGMT_WORK", "mgmt-work") };
+
+        // The default account reads OPENROUTER_MANAGEMENT_API_KEY — unset here.
+        assert_eq!(config.openrouter_management_key(None), None);
+        // A named account with its own var resolves it.
+        assert_eq!(
+            config.openrouter_management_key(Some("work")).as_deref(),
+            Some("mgmt-work")
+        );
+        // A named account without one resolves nothing, even when the default
+        // account's var is set — accounts never inherit across identities.
+        unsafe { std::env::set_var("OPENROUTER_MANAGEMENT_API_KEY", "mgmt-default") };
+        assert_eq!(
+            config.openrouter_management_key(None).as_deref(),
+            Some("mgmt-default")
+        );
+        assert_eq!(config.openrouter_management_key(Some("plain")), None);
+        // An unknown label resolves nothing rather than the default's key.
+        assert_eq!(config.openrouter_management_key(Some("typo")), None);
+
+        // The [openrouter] override renames the default account's var.
+        config.openrouter.management_api_key_env = "AI_USAGEBAR_TEST_OR_MGMT_DEFAULT".into();
+        unsafe { std::env::set_var("AI_USAGEBAR_TEST_OR_MGMT_DEFAULT", "mgmt-renamed") };
+        assert_eq!(
+            config.openrouter_management_key(None).as_deref(),
+            Some("mgmt-renamed")
+        );
+        unsafe { std::env::remove_var("OPENROUTER_MANAGEMENT_API_KEY") };
+        unsafe { std::env::remove_var("AI_USAGEBAR_TEST_OR_MGMT_WORK") };
+        unsafe { std::env::remove_var("AI_USAGEBAR_TEST_OR_MGMT_DEFAULT") };
     }
 
     #[test]
@@ -3890,6 +3972,7 @@ enabled = false
             label: "work".into(),
             api_key_env: Some("AI_USAGEBAR_TEST_DEEPSEEK_WORK".into()),
             api_key: Some("work-inline".into()),
+            management_api_key_env: None,
         });
         let _g = env_guard();
         unsafe { std::env::set_var("AI_USAGEBAR_TEST_DEEPSEEK_WORK", "work-env") };

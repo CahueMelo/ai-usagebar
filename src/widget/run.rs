@@ -793,11 +793,13 @@ async fn zai_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
 
 async fn openrouter_output(cli: &Cli, config: &Config) -> Result<WaybarOutput> {
     let (api_key, cache) = api_key_target(cli, config, VendorId::Openrouter)?;
+    let management_key = config.openrouter_management_key(cli.account.as_deref());
     let client = http_client()?;
     let endpoints = openrouter::fetch::Endpoints::default();
     let outcome = match openrouter::fetch_snapshot(
         &client,
         &api_key,
+        management_key.as_deref(),
         &cache,
         &endpoints,
         DEFAULT_TTL,
@@ -1400,6 +1402,7 @@ mod tests {
                 label: "work".into(),
                 api_key_env: None,
                 api_key: Some("work-key".into()),
+                management_api_key_env: None,
             });
         config
             .openrouter
@@ -1408,6 +1411,7 @@ mod tests {
                 label: "personal".into(),
                 api_key_env: None,
                 api_key: Some("personal-key".into()),
+                management_api_key_env: None,
             });
         let root = tempfile::tempdir().unwrap();
         let root_str = root.path().to_str().unwrap();
@@ -1469,6 +1473,7 @@ mod tests {
             label: "work".into(),
             api_key_env: None,
             api_key: Some("work-key".into()),
+            management_api_key_env: None,
         });
         let root = tempfile::tempdir().unwrap();
         let root_str = root.path().to_str().unwrap();

@@ -42,42 +42,16 @@ export function translateMetricLabel(language: Language, label: string): string 
 export function translateUsage(language: Language, value: string): string {
   if (language === "en") return value;
   const options = { locale: language };
-  return value
+  const translated = value
     .replace(/\b(\d+)% left\b/g, (_, percent: string) => m.percent_left({ percent }, options))
     .replace(/\b(\d+)% used\b/g, (_, percent: string) => m.percent_used({ percent }, options))
-    .replace(/\bLimit reached\b/g, m.limit_reached({}, options))
-    .replace(/\b(\$[\d,.]+) of (\$[\d,.]+) used\b/g, "$1 de $2 usados");
-}
-
-export function translateRowValue(language: Language, value: string): string {
-  if (language !== "pt-BR") return value;
-  const options = { locale: language };
-  let result = value;
-
-  if (result.toLowerCase() === "paid tier") {
-    return m.paid_tier ? m.paid_tier({}, options) : "Plano pago";
-  }
-  if (result.toLowerCase() === "free tier") {
-    return m.free_tier ? m.free_tier({}, options) : "Plano gratuito";
-  }
-
-  // Usage by period: "today $0.00 · week $0.00 · month $0.00"
-  result = result
-    .replace(/\btoday\b/gi, "hoje")
-    .replace(/\bweek\b/gi, "sem.")
-    .replace(/\bmonth\b/gi, "mês");
-
-  // Reqs: "219 reqs"
-  result = result.replace(/\b(\d+)\s+reqs\b/gi, "$1 reqs");
-
-  return result;
+    .replace(/\bLimit reached\b/g, m.limit_reached({}, options));
+  // The "$X of $Y used" footnote has no message of its own; pt-BR only.
+  if (language !== "pt-BR") return translated;
+  return translated.replace(/\b(\$[\d,.]+) of (\$[\d,.]+) used\b/g, "$1 de $2 usados");
 }
 
 export function useI18n() {
   const language = useContext(LanguageContext);
-  return {
-    language,
-    metricLabel: (label: string) => translateMetricLabel(language, label),
-    rowValue: (val: string) => translateRowValue(language, val),
-  };
+  return { language, metricLabel: (label: string) => translateMetricLabel(language, label) };
 }
